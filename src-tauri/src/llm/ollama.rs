@@ -15,6 +15,7 @@ impl OllamaProvider {
     pub fn new(base_url: impl Into<String>, default_model: impl Into<String>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
         Self {
@@ -82,15 +83,10 @@ impl LlmProvider for OllamaProvider {
                 .json(&body)
                 .send()
                 .await
-                .map_err(|e| AppError::LlmUnavailable(format!("ollama request failed: {e}")))?;
+                .map_err(|e| AppError::LlmUnavailable(if e.is_timeout() { "Ollama timeout" } else { "Ollama network failure" }.into()))?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
-                // Capture the response body to the local log only — never surface it
-                // to the frontend, since a misconfigured endpoint could inject
-                // arbitrary text into a string we'd otherwise render in chat.
-                let body = resp.text().await.unwrap_or_default();
-                log::warn!("ollama returned {}: {}", status, body);
                 return Err(AppError::LlmUnavailable(format!(
                     "ollama responded with status {}",
                     status.as_u16()

@@ -28,7 +28,11 @@ export type Memory = {
 export type Settings = {
   petName: string;
   personalityPreset: string;
+  personality?: import("../assistant/personality").Personality;
   llmProvider: string;
+  cloudEndpoint: string;
+  cloudModel: string;
+  providerTimeout: number;
   ollamaEndpoint: string;
   ollamaModel: string;
   localOnlyMode: boolean;

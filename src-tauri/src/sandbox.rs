@@ -87,10 +87,14 @@ pub fn read_inbox_by_name(home: &Path, file_name: &str) -> AppResult<InboxRead> 
     let pre_meta = std::fs::symlink_metadata(&candidate)
         .map_err(|_| AppError::Permission("inbox entry missing".into()))?;
     if pre_meta.file_type().is_symlink() {
-        return Err(AppError::Permission("symlinks are not allowed in inbox".into()));
+        return Err(AppError::Permission(
+            "symlinks are not allowed in inbox".into(),
+        ));
     }
     if !pre_meta.is_file() {
-        return Err(AppError::Permission("inbox entry is not a regular file".into()));
+        return Err(AppError::Permission(
+            "inbox entry is not a regular file".into(),
+        ));
     }
 
     let canonical = validate_within(&canonical_inbox, &candidate)?;
@@ -101,7 +105,9 @@ pub fn read_inbox_by_name(home: &Path, file_name: &str) -> AppResult<InboxRead> 
     let file = open_no_follow(&canonical)?;
     let meta = file.metadata()?;
     if !meta.is_file() {
-        return Err(AppError::Permission("opened handle is not a regular file".into()));
+        return Err(AppError::Permission(
+            "opened handle is not a regular file".into(),
+        ));
     }
     if meta.len() > MAX_FILE_BYTES {
         return Err(AppError::InvalidInput(format!(
@@ -246,7 +252,12 @@ pub fn write_export(home: &Path, file_name: &str, content: &str) -> AppResult<Pa
     write_in_subdir(home, "exports", file_name, content)
 }
 
-fn write_in_subdir(home: &Path, subdir: &str, file_name: &str, content: &str) -> AppResult<PathBuf> {
+fn write_in_subdir(
+    home: &Path,
+    subdir: &str,
+    file_name: &str,
+    content: &str,
+) -> AppResult<PathBuf> {
     if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
         return Err(AppError::Permission(format!(
             "invalid file name: {file_name}"
@@ -376,9 +387,16 @@ mod tests {
     fn read_inbox_blocks_path_traversal_in_name() {
         let (_g, home) = home();
         std::fs::write(home.join("notes").join("secret.md"), "secret").unwrap();
-        for bad in ["../notes/secret.md", "..\\notes\\secret.md", "C:\\Windows\\System32\\drivers\\etc\\hosts"] {
+        for bad in [
+            "../notes/secret.md",
+            "..\\notes\\secret.md",
+            "C:\\Windows\\System32\\drivers\\etc\\hosts",
+        ] {
             let err = read_inbox_by_name(&home, bad).unwrap_err();
-            assert!(matches!(err, AppError::Permission(_)), "name={bad} did not block");
+            assert!(
+                matches!(err, AppError::Permission(_)),
+                "name={bad} did not block"
+            );
         }
     }
 
@@ -389,7 +407,9 @@ mod tests {
         let r = read_inbox_by_name(&home, "note.md").unwrap();
         assert_eq!(r.content, "hello world");
         assert_eq!(r.file_name, "note.md");
-        assert!(r.canonical_path.starts_with(home.canonicalize().unwrap().join("inbox")));
+        assert!(r
+            .canonical_path
+            .starts_with(home.canonicalize().unwrap().join("inbox")));
     }
 
     #[test]
@@ -408,5 +428,127 @@ mod tests {
         let files = list_inbox(&home).unwrap();
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].name, "a.md");
+    }
+}
+
+/// Developer bridge has its own local directory, never accepts external paths.
+pub fn read_developer_event(home: &Path, name: &str) -> AppResult<String> {
+    use std::io::Read;
+    if name.is_empty()
+        || name.len() > 100
+        || name.contains("..")
+        || !name.ends_with(".json")
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    {
+        return Err(AppError::Permission("invalid event filename".into()));
+    }
+    let root = home.join("developer-events");
+    let path = root.join(name);
+    if std::fs::symlink_metadata(&path)?.file_type().is_symlink() {
+        return Err(AppError::Permission("event symlinks forbidden".into()));
+    }
+    validate_within(&root, &path)?;
+    let mut file = open_no_follow(&path)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() > 4096 {
+        return Err(AppError::InvalidInput(
+            "developer event exceeds 4096 bytes".into(),
+        ));
+    }
+    let mut s = String::new();
+    file.by_ref().take(4097).read_to_string(&mut s)?;
+    if s.len() > 4096 {
+        return Err(AppError::InvalidInput("event too large".into()));
+    }
+    Ok(s)
+}
+
+pub fn safe_pocket_name(name: &str) -> String {
+    let value: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || " ._-".contains(*c))
+        .take(160)
+        .collect();
+    let value = value.trim().trim_matches('.');
+    if value.is_empty() {
+        "file".into()
+    } else {
+        value.to_owned()
+    }
+}
+pub fn read_pocket_file(home: &Path, name: &str, limit: usize) -> AppResult<Vec<u8>> {
+    use std::io::Read;
+    if name.is_empty()
+        || name.len() > 200
+        || name.contains("..")
+        || name.chars().any(|c| c.is_control() || "/\\:".contains(c))
+    {
+        return Err(AppError::Permission("unsafe Pocket filename".into()));
+    }
+    let root = validate_within(home, &home.join("inbox"))?;
+    let path = root.join(name);
+    if std::fs::symlink_metadata(&path)?.file_type().is_symlink() {
+        return Err(AppError::Permission("Pocket symlinks forbidden".into()));
+    }
+    validate_within(&root, &path)?;
+    let mut file = open_no_follow(&path)?;
+    if !file.metadata()?.is_file() || file.metadata()?.len() > limit as u64 {
+        return Err(AppError::InvalidInput(
+            "Pocket file exceeds configured limit".into(),
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.by_ref()
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(AppError::InvalidInput("Pocket file too large".into()));
+    }
+    Ok(bytes)
+}
+pub fn export_pocket_file(home: &Path, name: &str, bytes: &[u8]) -> AppResult<()> {
+    use std::io::Write;
+    if bytes.len() > 1048576 || name != safe_pocket_name(name) || name.contains("..") {
+        return Err(AppError::Permission("unsafe Pocket export".into()));
+    }
+    let exports = validate_within(home, &home.join("exports"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(exports.join(name))?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+#[cfg(test)]
+mod pocket_file_tests {
+    use super::*;
+    #[test]
+    fn binary_file_round_trip_and_limits() {
+        let d = tempfile::tempdir().unwrap();
+        ensure_pet_home(d.path()).unwrap();
+        let bytes = vec![0, 255, 1, 254];
+        std::fs::write(d.path().join("inbox/test.bin"), &bytes).unwrap();
+        assert_eq!(read_pocket_file(d.path(), "test.bin", 4).unwrap(), bytes);
+        assert!(read_pocket_file(d.path(), "test.bin", 3).is_err());
+        assert!(read_pocket_file(d.path(), "../test.bin", 10).is_err());
+        export_pocket_file(d.path(), "safe.bin", &bytes).unwrap();
+        assert!(export_pocket_file(d.path(), "safe.bin", &bytes).is_err());
+        assert_eq!(
+            std::fs::read(d.path().join("exports/safe.bin")).unwrap(),
+            bytes
+        );
+        assert!(export_pocket_file(d.path(), "../escape", &bytes).is_err());
+    }
+    #[cfg(unix)]
+    #[test]
+    fn binary_symlink_rejected() {
+        use std::os::unix::fs::symlink;
+        let d = tempfile::tempdir().unwrap();
+        ensure_pet_home(d.path()).unwrap();
+        std::fs::write(d.path().join("outside"), "secret").unwrap();
+        symlink(d.path().join("outside"), d.path().join("inbox/link.bin")).unwrap();
+        assert!(read_pocket_file(d.path(), "link.bin", 1024).is_err());
     }
 }

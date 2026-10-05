@@ -6,13 +6,15 @@ pub mod models;
 pub mod sandbox;
 pub mod state;
 pub mod watcher;
+pub mod secrets;
+pub mod developer;
+pub mod personality;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::db::Db;
-use crate::llm::ollama::OllamaProvider;
-use crate::models::{endpoint_is_loopback, Settings};
+use crate::models::Settings;
 use crate::sandbox::{default_pet_home, ensure_pet_home};
 use crate::state::AppState;
 use tauri::Manager;
@@ -40,29 +42,7 @@ pub fn run() {
                 .and_then(|raw| serde_json::from_str::<Settings>(&raw).ok())
                 .unwrap_or_default();
 
-            // Configure provider when ollama is selected. Cloud providers are stubbed.
-            // Note on CSP and ollamaEndpoint: tauri.conf.json's connect-src whitelists
-            // http://localhost:11434 (Ollama default) for the webview. The user can
-            // override `ollama_endpoint` at runtime — that custom URL would be blocked
-            // by CSP if the webview tried to reach it directly, but our LLM calls go
-            // out from Rust via reqwest, not from the webview, so reachability is
-            // unaffected. The CSP only protects the webview against XSS exfiltration.
-            // local_only_mode IS enforced here: in that mode the endpoint must
-            // resolve to a loopback address, otherwise the provider is not loaded.
-            if settings.llm_provider == "ollama" {
-                if settings.local_only_mode && !endpoint_is_loopback(&settings.ollama_endpoint) {
-                    log::warn!(
-                        "local_only_mode is on but ollama_endpoint is non-loopback ({}); LLM disabled",
-                        settings.ollama_endpoint
-                    );
-                } else {
-                    let provider = Arc::new(OllamaProvider::new(
-                        settings.ollama_endpoint.clone(),
-                        settings.ollama_model.clone(),
-                    ));
-                    app_state.set_llm(Some(provider));
-                }
-            }
+            if let Ok(provider) = commands::configure_provider(&settings) { app_state.set_llm(provider); }
 
             let app_handle = app.handle().clone();
             match crate::watcher::spawn_inbox_watcher(app_handle, pet_home) {
@@ -89,6 +69,10 @@ pub fn run() {
             commands::quit_app,
             commands::open_settings,
             commands::get_settings,
+            commands::test_provider,
+            commands::calendar::get_calendar_config,
+            commands::calendar::save_calendar_config,
+            commands::calendar::disconnect_calendar,
             commands::save_settings,
             commands::set_cloud_api_key,
             commands::list_memories,
@@ -97,6 +81,9 @@ pub fn run() {
             commands::search_memories,
             commands::export_memories,
             commands::send_message,
+            commands::assistant_interpret,
+            commands::assistant_service,
+            commands::set_pocket_limit,
             commands::autonomous_speak,
             commands::list_inbox_files,
             commands::approve_file,

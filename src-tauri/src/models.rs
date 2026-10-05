@@ -326,7 +326,15 @@ pub struct Skill {
 pub struct Settings {
     pub pet_name: String,
     pub personality_preset: String,
+    #[serde(default)]
+    pub personality: crate::personality::Personality,
     pub llm_provider: String,
+    #[serde(default)]
+    pub cloud_endpoint: String,
+    #[serde(default)]
+    pub cloud_model: String,
+    #[serde(default = "default_provider_timeout")]
+    pub provider_timeout: u64,
     pub ollama_endpoint: String,
     pub ollama_model: String,
     pub local_only_mode: bool,
@@ -367,6 +375,8 @@ fn default_stage_background() -> String {
     "transparent".to_string()
 }
 
+fn default_provider_timeout() -> u64 { 30 }
+
 fn default_true() -> bool {
     true
 }
@@ -385,7 +395,11 @@ impl Default for Settings {
         Self {
             pet_name: "NYRC".to_string(),
             personality_preset: "curious".to_string(),
+            personality: crate::personality::Personality::default(),
             llm_provider: "ollama".to_string(),
+            cloud_endpoint: "https://api.openai.com/v1".into(),
+            cloud_model: String::new(),
+            provider_timeout: 30,
             ollama_endpoint: "http://localhost:11434".to_string(),
             ollama_model: "gemma4:e2b".to_string(),
             local_only_mode: true,

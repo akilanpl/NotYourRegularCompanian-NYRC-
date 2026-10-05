@@ -1,4 +1,7 @@
 <script lang="ts">
+  import AssistantInput from "./AssistantInput.svelte";
+  import type { AssistantRuntime } from "../assistant/runtime";
+  import type { Entities } from "../assistant/router";
   import type { CurrentTimeResult } from "../tasks/localUtilityExecutor";
   import type { CompanionAction } from "../tasks/action";
   import type { CompanionTask } from "../tasks/task";
@@ -11,6 +14,10 @@
   import type { ScheduledNotificationPermission } from "../bridge/scheduledNotifications";
 
   type Props = {
+    assistantRuntime: AssistantRuntime;
+    assistantEntities: () => Entities;
+    onAssistantResult: (task?: CompanionTask) => void;
+    onAssistantThinking: () => void;
     open: boolean;
     timers: TimerSnapshot[];
     currentTime: CurrentTimeResult | null;
@@ -26,6 +33,7 @@
   };
 
   let {
+    assistantRuntime, assistantEntities, onAssistantResult, onAssistantThinking,
     open,
     timers,
     currentTime,
@@ -201,12 +209,14 @@
     aria-expanded={open}
     aria-controls="local-utility-panel"
     onclick={onToggle}
-  >{open ? "Close" : "Time & timers"}</button>
+  >{open ? "Close" : "Ask NYRC"}</button>
 
   {#if open}
-    <section id="local-utility-panel" class="utility-panel" aria-label="Local time and timers">
+    <section id="local-utility-panel" class="utility-panel" aria-label="NYRC command panel">
+      <AssistantInput runtime={assistantRuntime} entities={assistantEntities} onResult={onAssistantResult} onThinking={onAssistantThinking} />
+      <details><summary>Utilities & saved settings</summary>
       <div class="panel-heading">
-        <h2>Time & timers</h2>
+        <h2>NYRC</h2>
         <button type="button" class="quiet-button" onclick={() => onAction(action("time.current", {}), "Get local time")}>
           Local time
         </button>
@@ -463,6 +473,7 @@
           <p class="empty-state">No modes yet</p>
         {/if}
       </section>
+      </details>
     </section>
   {/if}
 </div>
