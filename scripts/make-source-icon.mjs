@@ -1,4 +1,4 @@
-// Generates icons/source.png — a 512x512 nyrc pet icon — using only Node built-ins.
+// Generates icons/source.png — an original 512x512 NYRC device mark — using only Node built-ins.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, resolve } from "node:path";
@@ -23,7 +23,8 @@ for (let n = 0; n < 256; n++) {
 }
 function crc32(buf) {
   let c = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  for (let i = 0; i < buf.length; i++)
+    c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -41,67 +42,39 @@ function chunk(type, data) {
 const stride = W * 4;
 const raw = Buffer.alloc(H * (stride + 1));
 
-const cx = W / 2;
-const cy = H / 2;
-const bodyR = W * 0.42;
-
-function setPixel(x, y, r, g, b, a) {
+function setPixel(x, y, color) {
   const o = y * (stride + 1) + 1 + x * 4;
-  raw[o] = r;
-  raw[o + 1] = g;
-  raw[o + 2] = b;
-  raw[o + 3] = a;
+  for (let i = 0; i < 4; i++) raw[o + i] = color[i];
 }
-
-for (let y = 0; y < H; y++) {
-  raw[y * (stride + 1)] = 0; // filter byte
+function rounded(x, y, l, t, w, h, r) {
+  const dx = Math.max(l + r - x, 0, x - (l + w - r)),
+    dy = Math.max(t + r - y, 0, y - (t + h - r));
+  return (
+    x >= l && x <= l + w && y >= t && y <= t + h && dx * dx + dy * dy <= r * r
+  );
+}
+for (let y = 0; y < H; y++)
   for (let x = 0; x < W; x++) {
-    const dx = x - cx;
-    const dy = y - cy + 18;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    // Body — soft pink nyrc, with slight gradient.
-    if (dist < bodyR) {
-      const t = dist / bodyR;
-      const r = Math.round(255 - t * 12);
-      const g = Math.round(216 - t * 30);
-      const b = Math.round(225 - t * 18);
-      setPixel(x, y, r, g, b, 255);
-
-      // Cheeks
-      const cheekL = Math.hypot(x - (cx - 95), y - (cy + 18));
-      const cheekR = Math.hypot(x - (cx + 95), y - (cy + 18));
-      if (cheekL < 38) setPixel(x, y, 255, 168, 192, 255);
-      if (cheekR < 38) setPixel(x, y, 255, 168, 192, 255);
-
-      // Eyes
-      const eyeL = Math.hypot(x - (cx - 60), y - (cy - 18));
-      const eyeR = Math.hypot(x - (cx + 60), y - (cy - 18));
-      if (eyeL < 18) setPixel(x, y, 50, 32, 48, 255);
-      if (eyeR < 18) setPixel(x, y, 50, 32, 48, 255);
-
-      // Mouth — small smile
-      if (y > cy + 30 && y < cy + 60) {
-        const mx = x - cx;
-        const my = y - (cy + 35);
-        if (Math.abs(mx) < 30 && my > 0 && my < 12 && Math.abs(my - mx * mx / 90) < 4) {
-          setPixel(x, y, 70, 40, 60, 255);
-        }
-      }
-    } else {
-      // transparent background
-      setPixel(x, y, 0, 0, 0, 0);
-    }
+    let color = [0, 0, 0, 0];
+    if (rounded(x, y, 28, 28, 456, 456, 108)) color = [25, 32, 42, 255];
+    if (rounded(x, y, 91, 85, 330, 346, 99)) color = [194, 201, 209, 255];
+    if (rounded(x, y, 115, 111, 282, 234, 72)) color = [16, 23, 32, 255];
+    if (
+      rounded(x, y, 177, 197, 34, 61, 17) ||
+      rounded(x, y, 300, 197, 34, 61, 17)
+    )
+      color = [232, 241, 249, 255];
+    if (rounded(x, y, 231, 379, 50, 9, 4)) color = [151, 192, 224, 255];
+    setPixel(x, y, color);
   }
-}
 
 const idat = deflateSync(raw, { level: 9 });
 
 const ihdr = Buffer.alloc(13);
 ihdr.writeUInt32BE(W, 0);
 ihdr.writeUInt32BE(H, 4);
-ihdr[8] = 8;  // bit depth
-ihdr[9] = 6;  // color type RGBA
+ihdr[8] = 8; // bit depth
+ihdr[9] = 6; // color type RGBA
 ihdr[10] = 0; // compression
 ihdr[11] = 0; // filter
 ihdr[12] = 0; // interlace
@@ -114,4 +87,3 @@ const png = Buffer.concat([
 ]);
 
 writeFileSync(outFile, png);
-console.log(`wrote ${outFile} (${png.length} bytes)`);

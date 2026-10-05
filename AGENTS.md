@@ -39,7 +39,7 @@ your PR to.
 | `src-tauri/src/db.rs` | SQLite schema + CRUD. |
 | `src-tauri/src/llm/` | LLM provider trait + Ollama implementation + prompts. |
 | `src-tauri/src/sandbox.rs` | Pet home folder + safe file IO. |
-| `public/sprites/` | PNG sprites referenced by `SpriteRenderer.svelte`'s SRC map. |
+| `src/lib/components/CharacterRenderer.svelte` | Original semantic SVG face; presentation maps live in `product/`. |
 | `PRD.md` | Authoritative spec. Every requirement is `REQ-NNN`. |
 | `BACKLOG.md` | Deferred work with rationale. |
 | `DECISIONS.md` | Recent design decisions and the *why*. |
@@ -156,9 +156,7 @@ Include:
 - **Forgetting `aria-label` / focus management.** Every interactive
   element needs accessible naming. Inbox consent uses a focus trap; copy
   the pattern from `focusTrap.ts`.
-- **Shipping a new sprite without an idle fallback.** If a new pose PNG
-  is missing, `SpriteRenderer.svelte`'s `onerror` swaps to `companion-idle.png`.
-  Don't break that handler.
+- **Coupling behavior to the display.** Route semantic reactions through BodyCore and DesktopBodyAdapter. Renderer only consumes expressions.
 
 ---
 

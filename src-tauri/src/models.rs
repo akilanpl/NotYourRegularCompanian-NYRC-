@@ -324,6 +324,10 @@ pub struct Skill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
+    #[serde(default)]
+    pub onboarding_complete: bool,
+    #[serde(default)]
+    pub desktop_roaming: bool,
     pub pet_name: String,
     pub personality_preset: String,
     #[serde(default)]
@@ -393,6 +397,8 @@ pub fn normalize_stage_background(value: &str) -> &'static str {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            onboarding_complete: false,
+            desktop_roaming: false,
             pet_name: "NYRC".to_string(),
             personality_preset: "curious".to_string(),
             personality: crate::personality::Personality::default(),
@@ -491,6 +497,20 @@ mod model_tests {
         assert!(s.sound_effects);
         // REQ-122 — notifications are opt-in; legacy blobs default to off.
         assert!(!s.desktop_notifications);
+        assert!(!s.onboarding_complete);
+        assert!(!s.desktop_roaming);
+    }
+
+    #[test]
+    fn companion_setup_survives_settings_roundtrip() {
+        let mut settings = Settings::default();
+        settings.pet_name = "Nova".into();
+        settings.onboarding_complete = true;
+        settings.personality_preset = "Quiet".into();
+        let decoded: Settings = serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(decoded.pet_name,"Nova");
+        assert!(decoded.onboarding_complete);
+        assert_eq!(decoded.personality_preset,"Quiet");
     }
 
     #[test]

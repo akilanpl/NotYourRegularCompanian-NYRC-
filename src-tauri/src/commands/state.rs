@@ -215,3 +215,8 @@ pub(crate) fn load_settings_raw(db: &Db) -> AppResult<Settings> {
 pub fn list_skills(_state: State<'_, AppState>) -> AppResult<Vec<SkillManifest>> {
     Ok(builtin_skills())
 }
+
+#[tauri::command]
+pub fn get_product_notices() -> serde_json::Value {
+    serde_json::json!({"license":include_str!("../../../LICENSE"),"notices":include_str!("../../../THIRD_PARTY_NOTICES.md")})
+}

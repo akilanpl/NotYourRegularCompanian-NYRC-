@@ -7,7 +7,7 @@ import {
 } from "./rendererMapping";
 import { reactionsFor } from "./reaction";
 
-describe("temporary donor animation mapping", () => {
+describe("simulation choreography mapping", () => {
   it("maps every semantic expression to an existing movement state", () => {
     const expressions: CompanionExpression[] = [
       "neutral", "attentive", "curious", "happy", "pleased", "thinking",

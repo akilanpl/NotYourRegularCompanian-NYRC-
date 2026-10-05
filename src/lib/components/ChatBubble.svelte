@@ -2,22 +2,14 @@
   import type { Mood } from "../sim/state";
 
   type Props = { text: string; mood: Mood; side?: "above" | "below" };
-  let { text, mood, side = "above" }: Props = $props();
+  let { text, side = "above" }: Props = $props();
 
-  const moodColor: Record<Mood, string> = {
-    happy: "#FFE3EA",
-    curious: "#FFF1D6",
-    tired: "#E8DCEA",
-    hungry: "#FFE0CC",
-    bored: "#E2E8EE",
-    lonely: "#D9D2EA",
-  };
 </script>
 
 <div
   class="bubble"
   data-side={side}
-  style="--bg: {moodColor[mood]};"
+  style="--bg: var(--surface);"
   role="status"
   aria-live="polite"
   aria-atomic="true"
@@ -32,10 +24,11 @@
     background: var(--bg);
     color: var(--nyrc-text);
     border-radius: 14px;
-    padding: 10px 14px;
+    padding: 10px 14px 32px;
     font-size: 13px;
     line-height: 1.4;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+    border:1px solid var(--border);
+    box-shadow:var(--shadow);
     animation: pop 220ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
   }
   .bubble p {

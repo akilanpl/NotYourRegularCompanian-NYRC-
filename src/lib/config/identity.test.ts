@@ -31,6 +31,7 @@ it("uses standalone executable, bundle and renderer identities", async () => {
  expect(config.productName).toBe("NYRC");expect(config.identifier).toBe("com.nyrc.companion");
  const cargo=await readFile("src-tauri/Cargo.toml","utf8");expect(cargo).toContain('name = "nyrc"');expect(cargo).toContain('name = "nyrc_lib"');
  expect(await readFile("src-tauri/src/main.rs","utf8")).toContain("nyrc_lib::run()");
- await access("src/lib/components/SpriteRenderer.svelte");await access("public/sprites/companion-idle.png");
+ await access("src/lib/components/CharacterRenderer.svelte");
+ expect(await readFile("src/lib/components/CharacterRenderer.svelte","utf8")).not.toContain("SpriteRenderer");
  expect(await readFile("src/styles.css","utf8")).toContain("--nyrc-text");
 });

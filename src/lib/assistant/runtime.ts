@@ -232,26 +232,27 @@ export class AssistantRuntime {
 export function taskMessage(t: CompanionTask): string {
   if (t.status === "permission_required") return "Ready when you approve.";
   if (t.status === "failed")
-    return t.error?.message ?? "That did not complete.";
+    return t.action.id.startsWith("calendar.") ? "Calendar couldn’t complete that. Check its connection in Settings." : t.error?.code === "permission_denied" ? "Action denied." : "Couldn’t complete that action. Local features remain available.";
   const v = t.result as Record<string, unknown> | undefined;
   if (t.action.id === "time.current" && typeof v?.iso === "string")
     return new Date(v.iso).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
+  if(t.action.id === "timer.create") return `Timer started${v?.label ? ": " + v.label : "."}`;
   if (typeof v?.volume === "number") return `Volume: ${v.volume}%`;
   if (typeof v?.muted === "boolean") return v.muted ? "Muted." : "Unmuted.";
   if (typeof v?.scheduledAt === "string")
     return `Scheduled: ${v.title} · ${new Date(v.scheduledAt).toLocaleString()}`;
   if (t.action.id.startsWith("pocket.save") && typeof v?.id === "string")
-    return `Saved: ${v.title} [${v.id}]`;
+    return `Saved: ${v.title}`;
   if (Array.isArray(t.result))
     return t.result.length
       ? t.result
           .slice(0, 30)
           .map(
             (i: any) =>
-              `${i.title ?? i.label ?? i.summary ?? i.id}${i.id ? ` [${i.id}]` : ""}${i.start ? ` · ${typeof i.start === "string" ? i.start : (i.start.dateTime ?? i.start.date)}` : ""}`,
+              `${i.title ?? i.label ?? i.summary ?? "Saved item"}${i.start ? ` · ${typeof i.start === "string" ? i.start : (i.start.dateTime ?? i.start.date)}` : ""}`,
           )
           .join("\n")
       : "Nothing here yet.";
@@ -260,7 +261,7 @@ export function taskMessage(t: CompanionTask): string {
     v?.itemType === "file" &&
     (v.metadata as { encoding?: string })?.encoding === "base64"
   )
-    return "Binary file retrieved. Use “export pocket <id>” to save a copy in NYRC exports.";
+    return "File ready. Export it to keep a copy.";
   if (typeof v?.message === "string") return normalizeReply(v.message);
   if (typeof v?.content === "string")
     return normalizeReply(v.content, {

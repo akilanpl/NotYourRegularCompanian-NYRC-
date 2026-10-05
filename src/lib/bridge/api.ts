@@ -26,6 +26,8 @@ export type Memory = {
 };
 
 export type Settings = {
+  onboardingComplete?: boolean;
+  desktopRoaming?: boolean;
   petName: string;
   personalityPreset: string;
   personality?: import("../assistant/personality").Personality;

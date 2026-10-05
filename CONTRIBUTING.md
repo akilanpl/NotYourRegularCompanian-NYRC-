@@ -66,8 +66,8 @@ fully alive pet.
 ## What kinds of PRs we welcome
 
 - 🐛 **Bug fixes** with a regression test that reproduces the bug.
-- ✨ **New animation poses / sprite variants** — see `public/sprites/` and
-  `src/lib/components/SpriteRenderer.svelte` `SRC` map.
+- ✨ **Character expressions** — see `src/lib/product/presentation.ts` and
+  `src/lib/components/CharacterRenderer.svelte`.
 - 🧠 **Better mood/decay tuning** — keep changes small and explain the
   rationale (e.g. user-tested for 30 minutes, observed X).
 - 🔌 **New LLM providers** — implement the `LlmProvider` trait
