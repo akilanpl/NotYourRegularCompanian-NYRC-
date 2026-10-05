@@ -19,12 +19,32 @@ concurrency:
 
 jobs:
   deploy:
+    # Manual dispatch must not publish an unreviewed feature branch.
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Pages configuration and landing page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s docs/index.html || {
+            echo "::error::docs/index.html is missing or empty."
+            exit 1
+          }
+          if ! gh api "repos/$GITHUB_REPOSITORY/pages" > "$RUNNER_TEMP/pages.json"; then
+            echo "::error::Enable Pages at https://github.com/$GITHUB_REPOSITORY/settings/pages and select GitHub Actions as the source. See docs/PAGES.md."
+            exit 1
+          fi
+          if ! jq -e '.build_type == "workflow"' "$RUNNER_TEMP/pages.json" > /dev/null; then
+            echo "::error::Pages must use GitHub Actions as its build source. See docs/PAGES.md."
+            exit 1
+          fi
+      # Enabling Pages is a one-time administrator operation. enablement: true
+      # requires a separate privileged token; retain the scoped GITHUB_TOKEN.
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
