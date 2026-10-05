@@ -1,56 +1,50 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
-# Cancel in-progress runs for the same ref so a quick second push doesn't
-# burn extra runner minutes.
+permissions:
+  contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   frontend:
-    name: Frontend (vitest + svelte-check)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
+        with: { node-version: '22', cache: npm }
       - run: npm ci
+      - name: Validate workflow syntax
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/nyrc-actionlint"
+          gh release download v1.7.12 --repo rhysd/actionlint --pattern actionlint_1.7.12_linux_amd64.tar.gz --pattern actionlint_1.7.12_checksums.txt --dir "$RUNNER_TEMP/nyrc-actionlint"
+          (cd "$RUNNER_TEMP/nyrc-actionlint" && sha256sum --check --ignore-missing actionlint_1.7.12_checksums.txt && tar -xzf actionlint_1.7.12_linux_amd64.tar.gz)
+          "$RUNNER_TEMP/nyrc-actionlint/actionlint" -shellcheck= -pyflakes=
+      - run: npm run version:check
+      - run: npm run audit:identity
       - run: npm run check
       - run: npm test
-
-  backend:
-    name: Backend (cargo test)
-    runs-on: ubuntu-latest
+      - run: node --test scripts/release.test.mjs
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: git diff --exit-code
+  security:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Tauri Linux build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            build-essential \
-            curl \
-            wget \
-            file
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> src-tauri/target
-      - name: cargo test --lib
-        working-directory: src-tauri
-        run: cargo test --lib --quiet
-      - name: cargo build (debug)
-        working-directory: src-tauri
-        run: cargo build --quiet
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - uses: taiki-e/install-action@v2
+        with: { tool: 'cargo-audit@0.22.2' }
+      - run: cargo audit --file src-tauri/Cargo.lock --json > cargo-audit.json
+      - run: node scripts/security-audit.mjs cargo-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: dependency-security-report, path: cargo-audit.json }
+  native:
+    uses: ./.github/workflows/native-build.yml

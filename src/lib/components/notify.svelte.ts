@@ -23,7 +23,7 @@ export function createNotify() {
   let gate: NotificationGate = newNotificationGate();
   const bootAt = Date.now();
   // True while the settings window holds focus — the user is already looking
-  // at Mochi, so notifications are suppressed (REQ-122).
+  // at NYRC, so notifications are suppressed (REQ-122).
   let settingsFocused = false;
 
   /** Opt-in toggle (settings load + live settings:changed events). */

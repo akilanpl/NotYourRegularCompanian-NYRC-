@@ -1,9 +1,9 @@
 {
   "name": "nyrc",
   "private": true,
-  "version": "0.2.0",
+  "version": "1.0.0-rc.1",
   "type": "module",
-  "description": "NYRC — Not Your Regular Companion. A local-first intelligent personal companion.",
+  "description": "NYRC \u2014 Not Your Regular Companion. A local-first intelligent personal companion.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -13,22 +13,29 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "node scripts/build-release.mjs",
+    "version:check": "node scripts/release-version.mjs",
+    "version:sync": "node scripts/release-version.mjs --sync",
+    "audit:identity": "node scripts/identity-audit.mjs",
+    "release:artifacts": "node scripts/release-artifacts.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.1.1",
-    "@tauri-apps/plugin-notification": "^2"
+    "@tauri-apps/api": "2.11.0",
+    "@tauri-apps/plugin-notification": "2.3.3"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^4.0.0",
-    "@tauri-apps/cli": "^2.1.0",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@tauri-apps/cli": "2.11.0",
     "@tsconfig/svelte": "^5.0.4",
     "@types/node": "^22.10.0",
-    "svelte": "^5.1.9",
+    "svelte": "^5.57.1",
     "svelte-check": "^4.0.5",
     "tslib": "^2.8.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10",
-    "vitest": "^2.1.4"
+    "vite": "^7.3.6",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_TIMER_DURATION_MS,
   TimerService,
@@ -92,4 +92,10 @@ describe("TimerService", () => {
     );
     timers.dispose();
   });
+});
+
+it("bounds active timers and cancels callbacks on disposal",()=>{
+ let callbacks:(()=>void)[]=[];let cancelled=0;
+ const timers=new TimerService(()=>0,{set:(callback)=>{callbacks.push(callback);return()=>cancelled++;}});
+ for(let i=0;i<100;i++)timers.create(1000);expect(()=>timers.create(1000)).toThrow("100 active");const completion=vi.fn();timers.subscribe(completion);timers.dispose();callbacks.forEach(fn=>fn());expect(cancelled).toBe(100);expect(completion).not.toHaveBeenCalled();
 });

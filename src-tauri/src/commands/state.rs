@@ -36,6 +36,7 @@ pub(crate) fn load_or_init_pet_state(db: &Db) -> AppResult<PetState> {
 
 #[tauri::command]
 pub fn save_pet_state(state: State<'_, AppState>, mut pet: PetState) -> AppResult<PetState> {
+    pet.normalize();
     pet.id = PET_STATE_ID.to_string();
     pet.updated_at = now_rfc3339();
     state.db.save_pet_state(&pet)?;
@@ -71,12 +72,15 @@ pub fn open_settings(app: tauri::AppHandle) -> AppResult<()> {
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> AppResult<Settings> {
     let mut s = load_settings_raw(&state.db)?;
-    s.cloud_api_key_set = key_present(&state.db)?;
+    s.cloud_api_key_set = key_present(&state.db).unwrap_or(false);
     Ok(s)
 }
 
 #[tauri::command]
-pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResult<Settings> {
+pub async fn save_settings(app: tauri::AppHandle, state: State<'_, AppState>, settings: Settings) -> AppResult<Settings> {
+    if settings.pet_name.chars().count() > 40 || settings.pet_name.chars().any(char::is_control) || settings.ollama_endpoint.len() > 2048 || settings.cloud_endpoint.len() > 2048 || settings.ollama_model.len() > 150 {
+        return Err(AppError::InvalidInput("settings field limit exceeded".into()));
+    }
     if settings.local_only_mode
         && settings.llm_provider == "ollama"
         && !endpoint_is_loopback(&settings.ollama_endpoint)
@@ -88,6 +92,10 @@ pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResul
     }
 
     settings.personality.validate()?;
+    let previous = load_settings_raw(&state.db)?;
+    if requires_provider_confirmation(&previous, &settings) {
+        crate::authority::confirm(app, "provider.configure", &serde_json::json!({"provider":settings.llm_provider,"endpoint":if settings.llm_provider == "ollama" {&settings.ollama_endpoint} else {&settings.cloud_endpoint}})).await?;
+    }
     let provider = configure_provider(&settings)?;
     let mut to_persist = settings.clone();
     to_persist.cloud_api_key_set = false; // never persist this flag
@@ -101,7 +109,7 @@ pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResul
     state.set_llm(provider);
 
     let mut echoed = to_persist;
-    echoed.cloud_api_key_set = key_present(&state.db)?;
+    echoed.cloud_api_key_set = key_present(&state.db).unwrap_or(false);
     Ok(echoed)
 }
 
@@ -214,4 +222,40 @@ pub(crate) fn load_settings_raw(db: &Db) -> AppResult<Settings> {
 #[tauri::command]
 pub fn list_skills(_state: State<'_, AppState>) -> AppResult<Vec<SkillManifest>> {
     Ok(builtin_skills())
+}
+
+#[tauri::command]
+pub fn get_product_notices() -> serde_json::Value {
+    serde_json::json!({"license":include_str!("../../../LICENSE"),"notices":include_str!("../../../THIRD_PARTY_NOTICES.md")})
+}
+
+
+fn requires_provider_confirmation(previous: &Settings, next: &Settings) -> bool {
+    (next.llm_provider != "none"
+        && (next.llm_provider != previous.llm_provider
+            || next.cloud_endpoint != previous.cloud_endpoint
+            || next.ollama_endpoint != previous.ollama_endpoint))
+        || (previous.local_only_mode && !next.local_only_mode)
+}
+
+#[cfg(test)]
+mod authority_tests {
+    use super::*;
+    #[test]
+    fn provider_retargeting_and_network_enable_require_native_authority() {
+        let mut previous = Settings::default();
+        previous.llm_provider = "openai".into();
+        let mut next = previous.clone();
+        assert!(!requires_provider_confirmation(&previous, &next));
+        next.cloud_endpoint = "https://untrusted.example/v1".into();
+        assert!(requires_provider_confirmation(&previous, &next));
+        next = previous.clone(); next.llm_provider = "gemini".into();
+        assert!(requires_provider_confirmation(&previous, &next));
+        previous.local_only_mode = true; next = previous.clone(); next.local_only_mode = false;
+        assert!(requires_provider_confirmation(&previous, &next));
+        next = previous.clone(); next.pet_name = "New name".into();
+        assert!(!requires_provider_confirmation(&previous, &next));
+        next.llm_provider = "none".into();
+        assert!(!requires_provider_confirmation(&previous, &next));
+    }
 }

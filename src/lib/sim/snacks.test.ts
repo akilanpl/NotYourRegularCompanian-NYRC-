@@ -150,7 +150,7 @@ describe("REQ-107 discovery restore from persisted memories", () => {
   it("detects a prior discovery memory", () => {
     expect(
       isFavoriteDiscoveredInMemories([
-        { type: FAVORITE_MEMORY_TYPE, content: `Mochi's ${FAVORITE_MEMORY_MARKER} is 🍓 Strawberry` },
+        { type: FAVORITE_MEMORY_TYPE, content: `NYRC's ${FAVORITE_MEMORY_MARKER} is 🍓 Strawberry` },
       ]),
     ).toBe(true);
   });

@@ -399,7 +399,7 @@ pub struct InteractionReport {
     pub event_count: usize,
 }
 
-/// Generate a short, friendly note from Mochi summarising recent interactions.
+/// Generate a short, friendly note from NYRC summarising recent interactions.
 /// Uses the LLM when available; falls back to a deterministic canned line so a
 /// missing Ollama never breaks the button. Either way, a markdown file is
 /// written into the sandbox's `notes/` folder.

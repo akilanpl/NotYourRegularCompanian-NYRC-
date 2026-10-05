@@ -118,14 +118,22 @@ export function planMonitorCrossing(
   const current = monitors.find((m) => m.id === currentMonitorId);
   if (!current) return null;
 
-  const petAbsX = winPos.x + petPos.x;
-  const nearLeft = petAbsX - current.x <= petSize;
-  const nearRight = current.x + current.width - (petAbsX + petSize) <= petSize;
+  if (monitors.some(m => !Number.isFinite(m.scaleFactor) || m.scaleFactor <= 0)) return null;
+  // Logical rectangles use different origins at different DPI scales. Compare
+  // adjacency in the one physical desktop space; return target-logical positions
+  // because the bridge applies the target monitor's scale factor exactly once.
+  const physical = (m: MonitorInfo) => ({x:m.x*m.scaleFactor,y:m.y*m.scaleFactor,width:m.width*m.scaleFactor,height:m.height*m.scaleFactor});
+  const currentPhysical = physical(current);
+  const petAbsX = (winPos.x + petPos.x) * current.scaleFactor;
+  const physicalPetSize = petSize * current.scaleFactor;
+  const nearLeft = petAbsX - currentPhysical.x <= physicalPetSize;
+  const nearRight = currentPhysical.x + currentPhysical.width - (petAbsX + physicalPetSize) <= physicalPetSize;
 
   const fits = (m: MonitorInfo): boolean =>
     m.width >= viewport.width && m.height >= viewport.height;
   const yOverlap = (m: MonitorInfo): boolean =>
-    m.y < current.y + current.height && m.y + m.height > current.y;
+    physical(m).y < currentPhysical.y + currentPhysical.height &&
+    physical(m).y + physical(m).height > currentPhysical.y;
 
   // Left edge first (fixed, arbitrary order — a monitor narrower than 2×
   // petSize could otherwise make the choice nondeterministic per call site).
@@ -133,7 +141,7 @@ export function planMonitorCrossing(
     // Adjacent = x-range ending at (touching) the current left edge.
     const target = monitors.find(
       (m) => m !== current && m.id !== current.id && fits(m) &&
-        Math.abs(m.x + m.width - current.x) <= EDGE_TOLERANCE_PX && yOverlap(m),
+        Math.abs(physical(m).x + physical(m).width - currentPhysical.x) <= EDGE_TOLERANCE_PX * current.scaleFactor && yOverlap(m),
     );
     if (target) {
       // Enter the target from its RIGHT edge, heading left.
@@ -142,7 +150,7 @@ export function planMonitorCrossing(
         entryEdge: "right",
         winPosAfter: {
           x: target.x + target.width - viewport.width,
-          y: clamp(winPos.y, target.y, target.y + target.height - viewport.height),
+          y: clamp(winPos.y * current.scaleFactor / target.scaleFactor, target.y, target.y + target.height - viewport.height),
         },
         petPosAfter: { x: viewport.width - petSize, y: petPos.y },
       };
@@ -151,7 +159,7 @@ export function planMonitorCrossing(
   if (nearRight) {
     const target = monitors.find(
       (m) => m !== current && m.id !== current.id && fits(m) &&
-        Math.abs(current.x + current.width - m.x) <= EDGE_TOLERANCE_PX && yOverlap(m),
+        Math.abs(currentPhysical.x + currentPhysical.width - physical(m).x) <= EDGE_TOLERANCE_PX * current.scaleFactor && yOverlap(m),
     );
     if (target) {
       // Enter the target from its LEFT edge, heading right.
@@ -160,7 +168,7 @@ export function planMonitorCrossing(
         entryEdge: "left",
         winPosAfter: {
           x: target.x,
-          y: clamp(winPos.y, target.y, target.y + target.height - viewport.height),
+          y: clamp(winPos.y * current.scaleFactor / target.scaleFactor, target.y, target.y + target.height - viewport.height),
         },
         petPosAfter: { x: 0, y: petPos.y },
       };

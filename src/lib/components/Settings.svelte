@@ -1,861 +1,490 @@
 <script lang="ts">
+  import { version } from "../../../package.json";
+  const releaseChannel = import.meta.env.DEV ? "Development" : version.includes("-rc.") ? "Release candidate" : "Stable";
+  import SavedSetups from "./SavedSetups.svelte";
+  import PocketTray from "./PocketTray.svelte";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { api, type Settings } from "../bridge/api";
+  import { invoke, emit, listen } from "../bridge/tauri";
+  import BodyDiagnostics from "./BodyDiagnostics.svelte";
+  import { bodyCore } from "../body/session";
+  import type { BodyStatus } from "../body/core";
   import {
-    api,
-    type Settings,
-    type Memory,
-    type InboxFile,
-    type EventLogEntry,
-    type StatusReport,
-  } from "../bridge/api";
-  import { defaultPersonality } from "../assistant/personality";
-  import { invoke } from "../bridge/tauri";
-  import { emit } from "../bridge/tauri";
-  import { KEEPSAKE_MEMORY_TYPE } from "../sim";
-
+    presets,
+    normalizeName,
+    providerState,
+  } from "../product/presentation";
+  const sections = [
+    "General",
+    "Companion",
+    "AI",
+    "Calendar",
+    "Permissions",
+    "Notifications",
+    "Pocket",
+    "Devices",
+    "Advanced",
+    "About",
+  ];
+  let notices = $state<{ license: string; notices: string } | null>(null);
+  let tab = $state("General");
   let settings = $state<Settings | null>(null);
-  let memories = $state<Memory[]>([]);
-  // REQ-109 — keepsakes render on their own shelf, not in the memory list.
-  let keepsakes = $derived(memories.filter((m) => m.type === KEEPSAKE_MEMORY_TYPE));
-  let plainMemories = $derived(memories.filter((m) => m.type !== KEEPSAKE_MEMORY_TYPE));
-  let inbox = $state<InboxFile[]>([]);
-  let events = $state<EventLogEntry[]>([]);
-  let recentReports = $state<StatusReport[]>([]);
-  let runningReport = $state(false);
-  let savingMessage = $state("");
-  let exportPath = $state<string | null>(null);
-  let activeTab = $state<"general" | "memory" | "sandbox" | "developer">("general");
-  let loadError = $state<string | null>(null);
-  let actionError = $state<string | null>(null);
-  let pendingApiKey = $state("");
-  let providerTest = $state("");
-  let calendar = $state({calendarId:"primary",clientId:"",enabled:false});
-  let calendarSecret = $state("");
-  let calendarRefresh = $state("");
-  let pocketLimit = $state(262144);
-  async function testProvider() {
-    if (!settings) return;
-    providerTest = "Testing…";
-    try { settings = await api.saveSettings(settings); providerTest = await invoke<string>("test_provider"); }
-    catch { providerTest = "Connection failed. Check provider, model, credentials and local-only mode."; }
-  }
-  async function saveCalendar() {
-    try { await invoke("save_calendar_config",{config:calendar,clientSecret:calendarSecret || null,refreshToken:calendarRefresh || null});calendarSecret="";calendarRefresh="";savingMessage="Calendar configuration saved"; }
-    catch { actionError="Could not save calendar configuration securely."; }
-  }
-
-  let approvedSummary = $state<{ name: string; text: string } | null>(null);
-
-  function showError(prefix: string, e: unknown) {
-    const msg = (e as Error)?.message ?? String(e);
-    actionError = `${prefix}: ${msg}`;
-    setTimeout(() => (actionError = null), 4_000);
-  }
-
+  let message = $state("");
+  let error = $state("");
+  let key = $state("");
+  let test = $state("");
+  let busy = $state(false);
+  let diagnostics = $state<unknown>(null);
+  let bodies = $state<BodyStatus[]>([]);
+  let localBodies = $state<BodyStatus[]>(bodyCore.diagnostics());
+  let calendar = $state({
+    calendarId: "primary",
+    clientId: "",
+    enabled: false,
+  });
+  let secret = $state("");
+  let refresh = $state("");
   async function load() {
-    if (!api.hasBackend) return;
     try {
-      const [s, m, ix, ev, rr] = await Promise.all([
-        api.getSettings(),
-        api.listMemories(200),
-        api.listInboxFiles(),
-        api.getEventLog(50),
-        api.listStatusReports(10),
-      ]);
-      settings = {...s,personality:s.personality ?? {...defaultPersonality}};
+      settings = await api.getSettings();
       calendar = await invoke<typeof calendar>("get_calendar_config");
-      memories = m;
-      inbox = ix;
-      events = ev;
-      recentReports = rr;
-      loadError = null;
-    } catch (e) {
-      loadError = (e as Error)?.message ?? String(e);
+      diagnostics = await invoke("get_diagnostics");
+    } catch {
+      error = "Couldn’t load settings. Local commands remain available.";
     }
   }
-
   onMount(() => {
     document.body.classList.add("settings-page");
     void load();
-    // REQ-115 — the window is hidden-on-close and re-shown by the pet's
-    // context menu, so this component mounts once at app start. Refresh on
-    // focus so memories/keepsakes/reports reflect what happened since.
-    const onFocus = () => void load();
-    window.addEventListener("focus", onFocus);
-    // Returned cleanup runs on component destroy in Svelte 5; without it the
-    // settings background style leaks back onto the pet view in SPA navigation.
+    let disposed = false;
+    const offLocal = bodyCore.subscribe(
+      () => (localBodies = bodyCore.diagnostics()),
+    );
+    let off: (() => void) | undefined;
+    void listen<BodyStatus[]>("body:diagnostics", (s) => (bodies = s)).then(
+      (f) => {
+        if (disposed) {
+          f();
+          return;
+        }
+        off = f;
+        void emit("body:diagnostics-request", {});
+      },
+    );
     return () => {
+      disposed = true;
+      offLocal();
+      off?.();
       document.body.classList.remove("settings-page");
-      window.removeEventListener("focus", onFocus);
     };
   });
-
   async function save() {
     if (!settings) return;
-    savingMessage = "saving…";
+    busy = true;
+    error = "";
     try {
+      settings.petName = normalizeName(settings.petName);
       settings = await api.saveSettings(settings);
-      savingMessage = "saved ✓";
-      // REQ-113 — broadcast so the pet overlay picks up e.g. animation
-      // intensity without a restart. Best-effort.
-      void emit("settings:changed", settings).catch(() => undefined);
-    } catch (e) {
-      savingMessage = `error: ${(e as Error).message}`;
-    }
-    setTimeout(() => (savingMessage = ""), 2_000);
-  }
-
-  async function saveApiKey() {
-    if (!settings) return;
-    try {
-      settings = await api.saveSettings(settings);
-      const isSet = await api.setCloudApiKey(pendingApiKey || null);
-      settings = { ...settings, cloudApiKeySet: isSet };
-      pendingApiKey = "";
-      savingMessage = isSet ? "key saved ✓" : "key cleared ✓";
-    } catch (e) {
-      pendingApiKey = "";
-      showError("save key", e);
-    }
-    setTimeout(() => (savingMessage = ""), 2_000);
-  }
-
-  async function clearApiKey() {
-    if (!settings) return;
-    try {
-      await api.setCloudApiKey(null);
-      settings = { ...settings, cloudApiKeySet: false };
-      pendingApiKey = "";
-    } catch (e) {
-      showError("clear key", e);
-    }
-  }
-
-  async function deleteMemory(id: string) {
-    try {
-      await api.deleteMemory(id);
-      memories = await api.listMemories(200);
-    } catch (e) {
-      showError("delete memory", e);
-    }
-  }
-
-  async function exportMemories(format: "md" | "json") {
-    try {
-      exportPath = await api.exportMemories(format);
-    } catch (e) {
-      showError("export", e);
-    }
-  }
-
-  async function approveFile(name: string) {
-    try {
-      const summary = await api.approveFile(name);
-      approvedSummary = { name, text: summary };
-      inbox = await api.listInboxFiles();
-    } catch (e) {
-      showError("approve file", e);
-    }
-  }
-
-  /** §9.8 — manually trigger a status report (debug / on-demand). The pet's
-   *  normal flow fires this autonomously when (12h elapsed AND idle window);
-   *  this button is here so the user can see one immediately without waiting.
-   */
-  async function runReportNow() {
-    if (runningReport) return;
-    runningReport = true;
-    try {
-      await api.runStatusReport();
-      recentReports = await api.listStatusReports(10);
-    } catch (e) {
-      showError("status report", e);
+      await emit("settings:changed", settings);
+      message = "Saved";
+    } catch {
+      error = "Couldn’t save settings.";
     } finally {
-      runningReport = false;
+      busy = false;
     }
   }
-
-  function formatWindow(start: string, end: string): string {
-    const s = new Date(start);
-    const e = new Date(end);
-    const sameDay = s.toDateString() === e.toDateString();
-    const sLabel = sameDay
-      ? s.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : s.toLocaleString();
-    const eLabel = e.toLocaleString();
-    return `${sLabel} → ${eLabel}`;
-  }
-
-  async function refreshInbox() {
+  async function saveKey() {
+    if (!settings) return;
+    await save();
     try {
-      inbox = await api.listInboxFiles();
-    } catch (e) {
-      showError("inbox refresh", e);
+      settings.cloudApiKeySet = await api.setCloudApiKey(key || null);
+      message = "Credential updated securely";
+    } catch {
+      error = "Couldn’t update the credential.";
+    } finally {
+      key = "";
     }
   }
-
-  async function refreshEvents() {
+  async function testProvider() {
+    test = "Testing";
+    await save();
     try {
-      events = await api.getEventLog(50);
+      await invoke("test_provider");
+      test = "Connected";
     } catch (e) {
-      showError("event log", e);
+      test = /auth|401|403/i.test(String(e))
+        ? "Authentication failed"
+        : "Offline";
     }
   }
-
-  function payloadPreview(raw: string | null | undefined): string {
-    if (!raw) return "";
-    const flat = raw.replace(/\s+/g, " ").trim();
-    return flat.length > 80 ? flat.slice(0, 80) + "…" : flat;
+  async function saveCalendar() {
+    try {
+      await invoke("save_calendar_config", {
+        config: calendar,
+        clientSecret: secret || null,
+        refreshToken: refresh || null,
+      });
+      message = "Calendar configuration saved";
+    } catch {
+      error = "Couldn’t save Calendar configuration.";
+    } finally {
+      secret = "";
+      refresh = "";
+    }
   }
-
-  const TABS = ["general", "memory", "sandbox", "developer"] as const;
-  function onTabKeydown(e: KeyboardEvent) {
-    if (
-      e.key !== "ArrowLeft" &&
-      e.key !== "ArrowRight" &&
-      e.key !== "Home" &&
-      e.key !== "End"
-    ) return;
-    e.preventDefault();
-    const i = TABS.indexOf(activeTab);
-    let next = i;
-    if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
-    else if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
-    else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = TABS.length - 1;
-    activeTab = TABS[next];
-    requestAnimationFrame(() => {
-      document.getElementById(`tab-${activeTab}`)?.focus();
-    });
+  async function disconnectCalendar() {
+    error = "";
+    try {
+      await invoke("disconnect_calendar");
+      calendar = { calendarId: "primary", clientId: "", enabled: false };
+      secret = ""; refresh = "";
+      message = "Calendar disconnected; saved credentials removed";
+    } catch { error = "Calendar disconnect was denied or unavailable."; }
+  }
+  async function exportMemories() {
+    error = "";
+    try { message = "Memory export saved: " + await api.exportMemories("json"); }
+    catch { error = "Memory export was denied or unavailable."; }
+  }
+  function close() {
+    void getCurrentWindow().hide();
   }
 </script>
 
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === "Escape") close();
+  }}
+/>
 <main class="settings">
   <header>
-    <h1>NYRC</h1>
-    <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-    <nav role="tablist" aria-label="Settings sections" onkeydown={onTabKeydown}>
-      <button
-        id="tab-general"
-        role="tab"
-        aria-controls="panel-general"
-        aria-selected={activeTab === "general"}
-        tabindex={activeTab === "general" ? 0 : -1}
-        class:active={activeTab === "general"}
-        onclick={() => (activeTab = "general")}
-      >General</button>
-      <button
-        id="tab-memory"
-        role="tab"
-        aria-controls="panel-memory"
-        aria-selected={activeTab === "memory"}
-        tabindex={activeTab === "memory" ? 0 : -1}
-        class:active={activeTab === "memory"}
-        onclick={() => (activeTab = "memory")}
-      >Memory</button>
-      <button
-        id="tab-sandbox"
-        role="tab"
-        aria-controls="panel-sandbox"
-        aria-selected={activeTab === "sandbox"}
-        tabindex={activeTab === "sandbox" ? 0 : -1}
-        class:active={activeTab === "sandbox"}
-        onclick={() => (activeTab = "sandbox")}
-      >Sandbox</button>
-      <button
-        id="tab-developer"
-        role="tab"
-        aria-controls="panel-developer"
-        aria-selected={activeTab === "developer"}
-        tabindex={activeTab === "developer" ? 0 : -1}
-        class:active={activeTab === "developer"}
-        onclick={() => (activeTab = "developer")}
-      >Developer</button>
-    </nav>
+    <div>
+      <small>NYRC</small>
+      <h1>Settings</h1>
+    </div>
+    <button aria-label="Close settings" onclick={close}>Close</button>
   </header>
-
-  {#if !api.hasBackend}
-    <p class="warn">Backend bridge unavailable. Open via the desktop app to edit settings.</p>
-  {:else if loadError}
-    <p class="warn">Failed to load settings: {loadError}<br /><button onclick={load}>Retry</button></p>
-  {:else if !settings}
-    <p role="status" aria-live="polite">Loading settings…</p>
-  {:else}
-    {#if actionError}
-      <p class="warn" role="alert">{actionError}</p>
-    {/if}
-
-    {#if activeTab === "general"}
-      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <section id="panel-general" role="tabpanel" aria-labelledby="tab-general">
-        <label>
-          Pet name
-          <input bind:value={settings.petName} />
-        </label>
-        <label>
-          Personality
-          <select bind:value={settings.personalityPreset}>
-            <option value="curious">curious</option>
-            <option value="lazy">lazy</option>
-            <option value="playful">playful</option>
-            <option value="quiet">quiet</option>
-          </select>
-        </label>
-        {#if settings.personality}
-          <fieldset><legend>NYRC personality</legend>
-          {#each Object.keys(defaultPersonality) as dimension}
-            <label>{dimension}<input type="range" min="0" max="1" step="0.05" bind:value={settings.personality[dimension as keyof typeof defaultPersonality]} /></label>
-          {/each}
-          </fieldset>
-        {/if}
-        <label>
-          AI provider
-          <select bind:value={settings.llmProvider} onchange={() => {
-            if(!settings) return;
-            if(settings.llmProvider === 'gemini') settings.cloudEndpoint = 'https://generativelanguage.googleapis.com/v1beta';
-            if(settings.llmProvider === 'openai') settings.cloudEndpoint = 'https://api.openai.com/v1';
-            settings.cloudApiKeySet = false;
-          }}>
-            <option value="ollama">Ollama (local)</option>
-            <option value="openai">OpenAI-compatible API</option>
-            <option value="gemini">Gemini</option>
-            <option value="none">None — local commands only</option>
-          </select>
-        </label>
-        <label>
-          Ollama endpoint
-          <input bind:value={settings.ollamaEndpoint} placeholder="http://localhost:11434" />
-        </label>
-        <label>
-          Ollama model
-          <input bind:value={settings.ollamaModel} placeholder="gemma4:e2b" />
-        </label>
-
-        {#if settings.llmProvider === "openai" || settings.llmProvider === "gemini"}
-          <label>Provider endpoint<input bind:value={settings.cloudEndpoint} placeholder={settings.llmProvider === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"} /></label>
-          <label>Model<input bind:value={settings.cloudModel} maxlength="150" placeholder="Enter a model available to your account" /></label>
-          <label>Timeout (seconds)<input type="number" min="2" max="120" bind:value={settings.providerTimeout} /></label>
-        {/if}
-        <button onclick={testProvider}>Save configuration & test connection</button>
-        <p role="status">{providerTest}</p>
-        <fieldset>
-          <legend>Cloud API key (write-only)</legend>
-          <p class="hint">
-            Status: {settings.cloudApiKeySet ? "key on file" : "no key stored"}.
-            The key is never returned to the UI.
+  <nav aria-label="Settings sections">
+    {#each sections as section}<button
+        aria-current={tab === section ? "page" : undefined}
+        onclick={() => {
+          tab = section;
+          message = "";
+          error = "";
+        }}>{section}</button
+      >{/each}
+  </nav>
+  {#if error}<p role="alert" class="card">{error}</p>{/if}
+  {#if settings}<section class="card stack" aria-label={tab}>
+      <h2>{tab}</h2>
+      {#if tab === "General"}<p class="muted">
+          Your companion stays nearby. Local commands work without a provider.
+        </p>
+        <label
+          ><span>Keep above other windows</span><input
+            type="checkbox"
+            bind:checked={settings.alwaysOnTop}
+          /></label
+        ><label
+          ><span>Remember interactions locally</span><input
+            type="checkbox"
+            bind:checked={settings.memoryEnabled}
+          /></label
+        >
+        <SavedSetups />{:else if tab === "Companion"}<label
+          >Instance name<input
+            bind:value={settings.petName}
+            maxlength="40"
+          /></label
+        ><label
+          >Personality<select
+            value={settings.personalityPreset}
+            onchange={(e) => {
+              const name = e.currentTarget.value as keyof typeof presets;
+              settings!.personalityPreset = name;
+              settings!.personality = { ...presets[name] };
+            }}
+            >{#each Object.keys(presets) as name}<option>{name}</option
+              >{/each}</select
+          ></label
+        >
+        <p class="muted">
+          Balanced is measured and helpful. Quiet reduces initiative. Playful
+          adds wit. Professional keeps things direct.
+        </p>
+        <details>
+          <summary>Fine tune personality</summary
+          >{#if settings.personality}{#each ["warmth", "humor", "verbosity", "initiative", "expressiveness"] as dimension}<label
+                >{dimension}<input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={settings.personality[
+                    dimension as keyof typeof settings.personality
+                  ]}
+                  oninput={(e) => {
+                    settings!.personality![
+                      dimension as keyof NonNullable<Settings["personality"]>
+                    ] = Number(e.currentTarget.value);
+                  }}
+                /></label
+              >{/each}{/if}
+        </details>
+      {:else if tab === "AI"}<p>
+          <strong
+            >{providerState(
+              settings.localOnlyMode,
+              settings.cloudApiKeySet,
+              settings.llmProvider,
+              test,
+            )}</strong
+          >
+        </p>
+        <label
+          >AI mode<select
+            value={settings.localOnlyMode ? "local" : settings.llmProvider}
+            onchange={(e) => {
+              settings!.localOnlyMode = e.currentTarget.value === "local";
+              settings!.llmProvider = settings!.localOnlyMode
+                ? "none"
+                : e.currentTarget.value;
+              if (e.currentTarget.value === "gemini")
+                settings!.cloudEndpoint =
+                  "https://generativelanguage.googleapis.com/v1beta";
+              else if (
+                e.currentTarget.value === "openai" &&
+                settings!.cloudEndpoint.includes("googleapis")
+              )
+                settings!.cloudEndpoint = "https://api.openai.com/v1";
+              test = "";
+            }}
+            ><option value="local">Local only</option><option value="ollama"
+              >Ollama</option
+            ><option value="openai">OpenAI-compatible</option><option
+              value="gemini">Gemini</option
+            ></select
+          ></label
+        >
+        {#if settings.localOnlyMode}<p class="muted">
+            No AI provider needed. Timers, reminders, volume, aliases, modes and
+            Pocket remain available.
+          </p>{:else if settings.llmProvider === "ollama"}<label
+            >Endpoint<input bind:value={settings.ollamaEndpoint} /></label
+          ><label>Model<input bind:value={settings.ollamaModel} /></label
+          >{:else}<label
+            >Endpoint<input bind:value={settings.cloudEndpoint} /></label
+          ><label>Model<input bind:value={settings.cloudModel} /></label>
+          <p class="muted">
+            Credential: {settings.cloudApiKeySet
+              ? "Stored in macOS Keychain"
+              : "Not configured"}
           </p>
-          <div class="row">
-            <input
+          <label
+            >New API key<input
               type="password"
-              bind:value={pendingApiKey}
-              placeholder="paste new key…"
-              autocomplete="off"
-            />
-            <button onclick={saveApiKey} disabled={!pendingApiKey}>Save key</button>
-            <button class="danger" onclick={clearApiKey} disabled={!settings.cloudApiKeySet}>
-              Clear
-            </button>
-          </div>
-        </fieldset>
-
-        <fieldset>
-          <legend>Google Calendar</legend>
-          <p class="hint">Disconnected until you provide Google OAuth credentials. Enable the Calendar API and authorize the calendar.events scope. Refresh tokens and client secrets are saved in your OS keyring.</p>
-          <label>Calendar ID<input bind:value={calendar.calendarId} maxlength="250" /></label>
-          <label>OAuth client ID<input bind:value={calendar.clientId} maxlength="300" /></label>
-          <label>Client secret<input type="password" autocomplete="off" bind:value={calendarSecret} /></label>
-          <label>OAuth refresh token<input type="password" autocomplete="off" bind:value={calendarRefresh} /></label>
-          <label><input type="checkbox" bind:checked={calendar.enabled} />Enable Google Calendar</label>
-          <button onclick={saveCalendar}>Save securely</button>
-          <button onclick={async()=>{await invoke("disconnect_calendar");calendar.enabled=false;}}>Disconnect & remove credentials</button>
-        </fieldset>
-        <fieldset>
-          <legend>Pocket</legend>
-          <label>Maximum item bytes (1 KiB–1 MiB)<input type="number" min="1024" max="1048576" bind:value={pocketLimit} /></label>
-          <button onclick={async()=>{try{await invoke("set_pocket_limit",{bytes:pocketLimit});savingMessage="Pocket limit saved";}catch{actionError="Invalid Pocket limit";}}}>Save limit</button>
-          <p class="hint">File imports read only files you place in the NYRC inbox. Binary files can be exported to NYRC’s exports folder.</p>
-        </fieldset>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.localOnlyMode} />
-          Local-only mode (block any cloud calls)
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.autonomousSpeech} />
-          Allow autonomous chat bubbles
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.soundEffects} onchange={save} />
-          Sound effects (tiny chirps on feed/pat/play — never beeps on its own)
-        </label>
-        <label class="row">
-          <input
+              autocomplete="new-password"
+              bind:value={key}
+              placeholder="Never shown after saving"
+            /></label
+          >
+          <div class="row">
+            <button disabled={!key} onclick={saveKey}>Save key</button><button
+              onclick={() => {
+                key = "";
+                void saveKey();
+              }}>Remove key</button
+            >
+          </div>{/if}
+        {#if !settings.localOnlyMode}<button
+            disabled={test === "Testing"}
+            onclick={testProvider}
+            >{test === "Testing" ? "Testing…" : "Test connection"}</button
+          >{/if}
+      {:else if tab === "Calendar"}<p>
+          <strong
+            >{calendar.enabled
+              ? "Configured · connection requires a successful query"
+              : "Calendar isn’t connected."}</strong
+          >
+        </p>
+        <p class="muted">
+          Google Calendar is optional. Add your OAuth client and refresh token;
+          nothing is sent until you enable Calendar.
+        </p>
+        <label
+          >Enable Calendar<input
+            type="checkbox"
+            bind:checked={calendar.enabled}
+          /></label
+        ><label>Calendar ID<input bind:value={calendar.calendarId} /></label
+        ><label>OAuth client ID<input bind:value={calendar.clientId} /></label
+        ><label
+          >New client secret<input
+            type="password"
+            bind:value={secret}
+            autocomplete="new-password"
+          /></label
+        ><label
+          >New refresh token<input
+            type="password"
+            bind:value={refresh}
+            autocomplete="new-password"
+          /></label
+        ><button onclick={saveCalendar}>Save Calendar setup</button>
+        <button onclick={disconnectCalendar}>Disconnect and remove credentials</button>
+        <p class="muted">
+          Ask “what’s tomorrow?” to retrieve events. Use Calendar actions in the
+          assistant to review and confirm changes.
+        </p>
+      {:else if tab === "Permissions"}<p>
+          Clipboard reads ask each time. Calendar changes and AI-proposed
+          application opens pause for approval.
+        </p>
+        <p class="muted">
+          Allow once applies to that action only. Deny cancels it. No background
+          clipboard monitoring.
+        </p>
+      {:else if tab === "Notifications"}<label
+          >Desktop notifications<input
             type="checkbox"
             bind:checked={settings.desktopNotifications}
-            onchange={save}
-          />
-          Desktop notifications (critical needs only)
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.memoryEnabled} />
-          Memory enabled
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.alwaysOnTop} />
-          Always on top
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.startOnLogin} />
-          Start on login
-        </label>
-        <label>
-          Animation intensity
-          <input
-            type="range"
-            min="0"
-            max="1.5"
-            step="0.1"
-            bind:value={settings.animationIntensity}
-            onchange={save}
-          />
-          <span>{settings.animationIntensity.toFixed(1)}× {settings.animationIntensity === 0 ? "(particles & quirks off)" : ""}</span>
-        </label>
-        <label>
-          Stage background
-          <select bind:value={settings.stageBackground} onchange={save}>
-            <option value="transparent">Fully transparent (desktop overlay)</option>
-            <option value="auto">Auto (follows time of day)</option>
-            <option value="cream">Cream card</option>
-            <option value="blossom">Blossom pink</option>
-            <option value="mint">Mint</option>
-            <option value="night">Night</option>
-          </select>
-          <span class="hint">Applies to the pet window immediately.</span>
-        </label>
-        <label>
-          Pet home folder
-          <input bind:value={settings.petHomePath} placeholder="(default user data dir)" />
-        </label>
-        <label class="row">
-          <input type="checkbox" bind:checked={settings.developerEventLog} />
-          Developer event log
-        </label>
-        <div class="actions">
-          <button onclick={save}>Save</button>
-          <span class="status" role={savingMessage.startsWith("error") ? "alert" : "status"} aria-live="polite">{savingMessage}</span>
-        </div>
-      </section>
-    {/if}
-
-    {#if activeTab === "memory"}
-      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <section id="panel-memory" role="tabpanel" aria-labelledby="tab-memory">
-        <h3>Keepsake shelf</h3>
-        <p class="hint">
-          Little gifts your companion leaves when it feels well cared for (PRD §27.5).
+          /></label
+        ><label
+          >Interaction sounds<input
+            type="checkbox"
+            bind:checked={settings.soundEffects}
+          /></label
+        ><label
+          >Occasional autonomous replies<input
+            type="checkbox"
+            bind:checked={settings.autonomousSpeech}
+          /></label
+        >
+        <p class="muted">
+          Critical reminders take priority. Quiet personality reduces
+          initiative.
         </p>
-        {#if keepsakes.length === 0}
-          <p class="hint">
-            Nothing here yet — keep your companion fed, played with, and patted, and
-            she'll bring you something.
+      {:else if tab === "Pocket"}<p class="muted">
+          Saved locally. Clipboard reads ask permission.
+        </p>
+        <PocketTray />
+      {:else if tab === "Devices"}<p>
+          <strong>Desktop body</strong> · Connected
+        </p>
+        {#each [...bodies, ...localBodies].filter((b) => b.bodyId !== "desktop") as body}<div
+          >
+            <strong
+              >{body.bodyId === "virtual"
+                ? "Virtual body"
+                : "External device"}</strong
+            >
+            · {body.connected ? "Connected" : "Disconnected"}<small>
+              · v{body.version}{body.batteryPercent !== undefined
+                ? " · " + body.batteryPercent + "% battery"
+                : ""}</small
+            >
+          </div>{/each}
+        <p class="muted">
+          Device disconnection doesn’t interrupt local features. Simulator and
+          pairing tools are in Advanced.
+        </p>
+      {:else if tab === "Advanced"}<label
+          >Allow desktop roaming<input
+            type="checkbox"
+            bind:checked={settings.desktopRoaming}
+          /></label
+        ><label
+          >Developer event bridge<input
+            type="checkbox"
+            bind:checked={settings.developerEventLog}
+          /></label
+        >
+        <button onclick={exportMemories}>Export memories as JSON</button>
+        <p class="muted">For a full reset, remove AI keys and disconnect Calendar, quit NYRC, then back up and move the storage folder shown below.</p>
+        <details>
+          <summary>Storage and capabilities</summary>
+          <pre>{JSON.stringify(diagnostics, null, 2)}</pre>
+        </details>
+      {:else}<h1>NYRC</h1>
+        <p>Not Your Regular Companion</p>
+        <p>Version {version} · {releaseChannel} · MIT License</p>
+        <p class="muted">
+          Settings, memories and Pocket live in your local application data
+          folder. Cloud requests use your selected provider. Credentials stay in
+          the operating system keychain.
+        </p>
+        <details>
+          <summary
+            onclick={() => {
+              void invoke<{ license: string; notices: string }>(
+                "get_product_notices",
+              ).then((v) => (notices = v)).catch(() => { notices = {license:"License unavailable. See bundled Resources.",notices:"Third-party notices unavailable."}; });
+            }}>License & third-party notices</summary
+          >
+          <p>
+            MIT © 2026 cskwork. Portions derive from an MIT-licensed desktop
+            companion. The full LICENSE and THIRD_PARTY_NOTICES.md are included
+            in the app Resources folder.
           </p>
-        {:else}
-          <ul class="keepsake-shelf">
-            {#each keepsakes as k (k.id)}
-              <li>
-                <p class="keepsake-content">{k.content}</p>
-                <div class="row">
-                  <small>{new Date(k.createdAt).toLocaleDateString()}</small>
-                  <button
-                    class="danger"
-                    onclick={() => deleteMemory(k.id)}
-                    aria-label={`Delete keepsake: ${k.content}`}
-                  >delete</button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        <h3>Memories</h3>
-        <p class="hint">
-          Memories live in your local SQLite database. They are private until you export or share them.
-        </p>
-        <div class="actions">
-          <button onclick={() => exportMemories("md")}>Export Markdown</button>
-          <button onclick={() => exportMemories("json")}>Export JSON</button>
-          {#if exportPath}
-            <span class="status">→ {exportPath}</span>
-          {/if}
-        </div>
-        {#if plainMemories.length === 0}
-          <p class="hint">No durable memories yet — chat with your companion to seed them.</p>
-        {:else}
-          <ul class="memory-list">
-            {#each plainMemories as m (m.id)}
-              <li>
-                <div>
-                  <span class="tag">{m.type}</span>
-                  <span class="meta">imp {m.importance} · conf {(m.confidence * 100).toFixed(0)}%</span>
-                </div>
-                <p>{m.content}</p>
-                <div class="row">
-                  <small>{new Date(m.createdAt).toLocaleString()}</small>
-                  <button class="danger" onclick={() => deleteMemory(m.id)}>delete</button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
-    {/if}
-
-    {#if activeTab === "sandbox"}
-      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <section id="panel-sandbox" role="tabpanel" aria-labelledby="tab-sandbox">
-        <p class="hint">
-          Drop <code>.txt</code>, <code>.md</code>, or <code>.json</code> files into the inbox to share with your companion.
-          Only files you explicitly approve below will be read.
-        </p>
-        <div class="actions">
-          <button onclick={refreshInbox}>Refresh inbox</button>
-          <button onclick={runReportNow} disabled={runningReport}>
-            {runningReport ? "Writing report…" : "Run status report now"}
-          </button>
-        </div>
-        {#if inbox.length === 0}
-          <p class="hint">Inbox is empty.</p>
-        {:else}
-          <ul class="inbox-list">
-            {#each inbox as f (f.name)}
-              <li>
-                <div>
-                  <strong>{f.name}</strong>
-                  <small>{(f.sizeBytes / 1024).toFixed(1)} KB · {f.modified ?? ""}</small>
-                </div>
-                <button onclick={() => approveFile(f.name)}>Approve & summarize</button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-        {#if approvedSummary}
-          <div class="approved-summary" role="status" aria-live="polite">
-            <div class="row">
-              <strong>Summary — {approvedSummary.name}</strong>
-              <button onclick={() => (approvedSummary = null)} aria-label="Dismiss summary">×</button>
-            </div>
-            <p>{approvedSummary.text}</p>
-          </div>
-        {/if}
-        <h3>Recent status reports</h3>
-        <p class="hint">
-          Your companion writes one of these roughly every 12 hours during an idle
-          window — see PRD §9.8. Files land under your pet home folder's
-          <code>dreams/</code> directory.
-        </p>
-        {#if recentReports.length === 0}
-          <p class="hint">
-            No reports yet. They appear after your companion has been around for at
-            least 12 hours and finds an idle moment, or you can use the
-            button above to trigger one now.
-          </p>
-        {:else}
-          <ul class="report-list">
-            {#each recentReports as r (r.id)}
-              <li>
-                <div class="row">
-                  <strong>{new Date(r.createdAt).toLocaleString()}</strong>
-                  <small>{formatWindow(r.windowStart, r.windowEnd)}</small>
-                </div>
-                {#if r.prose}
-                  <p class="prose">{r.prose}</p>
-                {/if}
-                <ul class="triple">
-                  {#if r.learned}<li><b>learned:</b> {r.learned}</li>{/if}
-                  {#if r.noticed}<li><b>noticed:</b> {r.noticed}</li>{/if}
-                  {#if r.wants}<li><b>wants:</b> {r.wants}</li>{/if}
-                </ul>
-                {#if r.filePath}
-                  <small class="meta">→ {r.filePath}</small>
-                {/if}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
-    {/if}
-
-    {#if activeTab === "developer"}
-      <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-      <section id="panel-developer" role="tabpanel" aria-labelledby="tab-developer">
-        {#if !settings.developerEventLog}
-          <p class="hint">
-            The developer event log is disabled. Enable “Developer event log” in
-            the General tab to inspect recent events.
-          </p>
-        {:else}
-          <p class="hint">Internal event log — last 50 events. Refresh on demand.</p>
-          <div class="actions">
-            <button onclick={refreshEvents}>Refresh</button>
-          </div>
-          {#if events.length === 0}
-            <p class="hint">No events logged.</p>
-          {:else}
-            <div class="event-log-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>time</th>
-                    <th>type</th>
-                    <th>salience</th>
-                    <th>payload</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each events as e (e.id)}
-                    <tr>
-                      <td>{new Date(e.createdAt).toLocaleTimeString()}</td>
-                      <td>{e.eventType}</td>
-                      <td>{e.salience ?? "-"}</td>
-                      <td title={e.payloadJson ?? ""}>{payloadPreview(e.payloadJson)}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        {/if}
-      </section>
-    {/if}
-  {/if}
+          {#if notices}<pre>{notices.license}
+{notices.notices}</pre>{/if}
+        </details>{/if}
+      {#if !["About", "Devices", "Permissions", "Pocket", "Calendar"].includes(tab)}<button
+          class="primary"
+          disabled={busy}
+          onclick={save}>{busy ? "Saving…" : "Save settings"}</button
+        >{/if}
+      <div hidden={tab !== "Advanced"}><BodyDiagnostics /></div>
+      {#if message}<p role="status">{message}</p>{/if}
+    </section>{:else if !error}<p class="card" role="status">
+      Loading local settings…
+    </p>{/if}
 </main>
 
 <style>
   .settings {
-    padding: 16px 20px;
-    max-width: 720px;
-    margin: 0 auto;
-    color: var(--mochi-text);
+    padding: 22px;
+    max-width: 680px;
+    margin: auto;
   }
   header {
     display: flex;
-    align-items: center;
     justify-content: space-between;
+    align-items: center;
     margin-bottom: 12px;
   }
-  h1 {
+  header h1 {
     margin: 0;
-    font-size: 20px;
   }
   nav {
     display: flex;
-    gap: 4px;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
   }
   nav button {
-    background: transparent;
-    color: var(--mochi-text);
-    padding: 4px 10px;
-    border-radius: 8px;
-  }
-  nav button.active {
-    background: var(--mochi-pink);
-  }
-  section {
-    background: white;
-    border-radius: 14px;
-    padding: 16px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
-  fieldset {
-    border: 1px dashed #e7d1da;
-    border-radius: 10px;
-    padding: 8px 12px;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  legend {
-    padding: 0 6px;
-    font-size: 12px;
-    color: #6a5a6a;
-  }
-  label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 12px;
-    color: #4a3a4a;
-  }
-  label.row {
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-  }
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-  }
-  .status {
-    font-size: 11px;
-    color: #6a5a6a;
-  }
-  .hint {
-    font-size: 12px;
-    color: #6a5a6a;
-  }
-  .warn {
-    background: #fff4d4;
-    color: #6b4f00;
-    padding: 10px 12px;
-    border-radius: 10px;
-  }
-  .memory-list,
-  .inbox-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    max-height: 320px;
-    overflow-y: auto;
-  }
-  .keepsake-shelf {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 8px;
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  .keepsake-shelf li {
-    background: linear-gradient(180deg, #fff4e8, var(--mochi-cream));
-    border: 1px dashed #ecd7c2;
-    border-radius: 10px;
-    padding: 8px 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .keepsake-content {
-    margin: 0;
     font-size: 12px;
   }
-  h3 {
-    margin: 6px 0 0;
-    font-size: 14px;
+  nav [aria-current="page"] {
+    background: #a9c6de;
+    color: #111820;
   }
-  .memory-list li,
-  .inbox-list li {
-    background: var(--mochi-cream);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  input[type="checkbox"] {
+    width: 20px;
+    min-height: 20px;
   }
-  .inbox-list li {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .tag {
-    background: var(--mochi-pink);
-    border-radius: 999px;
-    padding: 2px 8px;
-    font-size: 11px;
-    margin-right: 6px;
-  }
-  .meta {
-    font-size: 11px;
-    color: #7a6a7a;
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-  }
-  .danger {
-    background: #f7d2d2;
-    color: #6e2222;
-    font-size: 11px;
-    padding: 2px 10px;
-  }
-  table {
-    width: 100%;
-    font-size: 11px;
-    border-collapse: collapse;
-  }
-  table th,
-  table td {
-    text-align: left;
-    padding: 4px 6px;
-    border-bottom: 1px solid #f1e1e8;
-    vertical-align: top;
-    word-break: break-word;
-  }
-  .event-log-scroll {
-    max-height: 320px;
-    overflow-y: auto;
-  }
-  .approved-summary {
-    background: var(--mochi-cream);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .approved-summary p {
-    margin: 0;
+  pre {
     white-space: pre-wrap;
-    word-break: break-word;
-  }
-  .report-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    max-height: 420px;
-    overflow-y: auto;
-  }
-  .report-list li {
-    background: var(--mochi-cream);
-    border-radius: 10px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .report-list .prose {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.5;
-    color: #4a3a4a;
-    white-space: pre-wrap;
-  }
-  .report-list .triple {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    font-size: 12px;
-    color: #4a3a4a;
-  }
-  .report-list .meta {
+    overflow-wrap: anywhere;
     font-size: 11px;
-    color: #7a6a7a;
+    max-height: 300px;
+    overflow: auto;
+  }
+  @media (max-width: 400px) {
+    .settings {
+      padding: 12px;
+    }
   }
 </style>

@@ -379,7 +379,12 @@ fn map_assistant_mode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssistantMode
 
 impl Db {
     pub fn claim_developer_event(&self,id:&str)->AppResult<bool> {
-        Ok(self.conn.lock().execute("INSERT OR IGNORE INTO developer_events(id) VALUES (?1)",[id])? == 1)
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let changed = tx.execute("INSERT OR IGNORE INTO developer_events(id) VALUES (?1)",[id])? == 1;
+        tx.execute("DELETE FROM developer_events WHERE rowid NOT IN (SELECT rowid FROM developer_events ORDER BY rowid DESC LIMIT 10000)", [])?;
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn save_pocket_item(&self, item: &crate::commands::PocketItem) -> AppResult<()> {
@@ -402,19 +407,23 @@ impl Db {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(path)?;
+        if path.exists() && std::fs::metadata(path)?.permissions().readonly() { return Err(AppError::Permission("Database is read-only".into())); }
+        let mut conn = Connection::open_with_flags(path,rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW)?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        migrate_schema(&mut conn)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
-        conn.execute_batch(SCHEMA_SQL)?;
-        ensure_pet_state_has_last_report_at(&conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
     pub fn open_in_memory() -> AppResult<Self> {
-        let conn = Connection::open_in_memory()?;
-        conn.execute_batch(SCHEMA_SQL)?;
-        ensure_pet_state_has_last_report_at(&conn)?;
+        let mut conn = Connection::open_in_memory()?;
+        migrate_schema(&mut conn)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
@@ -436,6 +445,9 @@ impl Db {
 
     // ------- Pet state -------
     pub fn save_pet_state(&self, state: &PetState) -> AppResult<()> {
+        let mut normalized = state.clone();
+        normalized.normalize();
+        let state = &normalized;
         let conn = self.conn.lock();
         // REQ-102 — `last_report_at` is monotonic. The pet window's debounced
         // save can carry a watermark that predates a report just written by
@@ -528,11 +540,14 @@ impl Db {
                 },
             )
             .optional()?;
-        Ok(res)
+        Ok(res.map(|mut state| {state.normalize();state}))
     }
 
     // ------- Memories -------
     pub fn create_memory(&self, mem: NewMemory) -> AppResult<Memory> {
+        if mem.content.trim().is_empty() || mem.content.len() > 4000 || mem.r#type.len() > 40 || mem.importance.is_some_and(|v| !(1..=10).contains(&v)) || mem.confidence.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)) {
+            return Err(AppError::InvalidInput("invalid memory bounds".into()));
+        }
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339();
         let importance = mem.importance.unwrap_or(1);
@@ -1376,14 +1391,27 @@ fn map_status_report(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatusReport> 
     })
 }
 
+pub const SCHEMA_VERSION: i64 = 1;
+fn migrate_schema(conn: &mut Connection) -> AppResult<()> {
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version > SCHEMA_VERSION || version < 0 {
+        return Err(AppError::InvalidInput("unsupported database schema version; retain the database and use a compatible NYRC build".into()));
+    }
+    if version == SCHEMA_VERSION { return Ok(()); }
+    let tx = conn.transaction()?;
+    tx.execute_batch(SCHEMA_SQL)?;
+    ensure_pet_state_has_last_report_at(&tx)?;
+    tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Idempotent migration: add `last_report_at` to `pet_state` if a pre-§9.8
 /// database is being opened. The column is included in `SCHEMA_SQL` for fresh
 /// databases, but `CREATE TABLE IF NOT EXISTS` is a no-op on existing tables,
 /// so we must inspect the live schema to decide whether to ALTER.
 ///
-/// Errors here are NON-fatal — if the migration fails, downstream queries that
-/// reference the column will fail with a clear error and surface the issue.
-/// PRD §10.2: a failed migration must not crash app startup.
+/// Errors roll back the schema transaction; startup returns a recovery error.
 fn ensure_pet_state_has_last_report_at(conn: &Connection) -> AppResult<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(pet_state)")?;
     let mut rows = stmt.query([])?;
@@ -1396,9 +1424,7 @@ fn ensure_pet_state_has_last_report_at(conn: &Connection) -> AppResult<()> {
     }
     drop(rows);
     drop(stmt);
-    if let Err(e) = conn.execute("ALTER TABLE pet_state ADD COLUMN last_report_at TEXT", []) {
-        log::warn!("could not add last_report_at column (may already exist): {e}");
-    }
+    conn.execute("ALTER TABLE pet_state ADD COLUMN last_report_at TEXT", [])?;
     Ok(())
 }
 
@@ -1456,12 +1482,24 @@ mod tests {
     }
 
     #[test]
+    fn schema_upgrade_is_transactional_and_versioned() {
+        let mut conn=Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE memories(incompatible TEXT)",[]).unwrap();
+        assert!(migrate_schema(&mut conn).is_err());
+        let version:i64=conn.query_row("PRAGMA user_version",[],|r|r.get(0)).unwrap();assert_eq!(version,0);
+        let count:i64=conn.query_row("SELECT COUNT(*) FROM sqlite_master WHERE name='pet_state'",[],|r|r.get(0)).unwrap();assert_eq!(count,0);
+        let mut fresh=Connection::open_in_memory().unwrap();migrate_schema(&mut fresh).unwrap();
+        assert_eq!(fresh.query_row("PRAGMA user_version",[],|r|r.get::<_,i64>(0)).unwrap(),SCHEMA_VERSION);
+        migrate_schema(&mut fresh).unwrap();
+    }
+
+    #[test]
     fn pet_state_round_trip() {
         let db = fresh();
-        let state = PetState::new("Mochi");
+        let state = PetState::new("NYRC");
         db.save_pet_state(&state).unwrap();
         let loaded = db.load_pet_state("default").unwrap().unwrap();
-        assert_eq!(loaded.name, "Mochi");
+        assert_eq!(loaded.name, "NYRC");
         assert_eq!(loaded.energy, 80);
     }
 
@@ -1522,7 +1560,7 @@ mod tests {
 
     #[test]
     fn due_scheduled_items_are_claimed_once_and_survive_reopen() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("scheduled.sqlite");
         let created = {
             let db = Db::open(&db_path).unwrap();
@@ -1566,7 +1604,7 @@ mod tests {
         use std::sync::{Arc, Barrier};
         use std::thread;
 
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("concurrent-scheduler.sqlite");
         let first = Arc::new(Db::open(&db_path).unwrap());
         let second = Arc::new(Db::open(&db_path).unwrap());
@@ -1594,7 +1632,7 @@ mod tests {
 
     #[test]
     fn yearly_important_date_advances_atomically_and_survives_restart() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("yearly-date.sqlite");
         let created = {
             let db = Db::open(&db_path).unwrap();
@@ -1659,7 +1697,7 @@ mod tests {
 
     #[test]
     fn aliases_and_modes_persist_with_normalized_exact_aliases() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("assistant-profiles.sqlite");
         let (created_alias, mode) = {
             let db = Db::open(&db_path).unwrap();
@@ -1757,7 +1795,7 @@ mod tests {
     #[test]
     fn last_report_at_is_monotonic_on_save() {
         let db = fresh();
-        let mut pet = PetState::new("Mochi");
+        let mut pet = PetState::new("NYRC");
         pet.last_report_at = Some("2026-08-19T12:00:00+00:00".to_string());
         db.save_pet_state(&pet).unwrap();
 
@@ -1821,8 +1859,8 @@ mod tests {
     fn last_interaction_at_persists_across_restart_and_drives_away_minutes() {
         use chrono::Duration;
 
-        let tmp = tempfile::tempdir().unwrap();
-        let db_path = tmp.path().join("mochi.sqlite");
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        let db_path = tmp.path().join("nyrc.sqlite");
 
         // Pretend the user last interacted 90 minutes ago.
         let away_minutes_expected: i64 = 90;
@@ -1832,7 +1870,7 @@ mod tests {
         // --- Pre-restart: save a state with last_interaction_at set ---
         {
             let db = Db::open(&db_path).unwrap();
-            let mut state = PetState::new("Mochi");
+            let mut state = PetState::new("NYRC");
             state.id = "default".to_string();
             state.last_interaction_at = Some(saved_at_iso.clone());
             db.save_pet_state(&state).unwrap();
@@ -2094,7 +2132,7 @@ mod tests {
     /// and the existing row must survive byte-for-byte.
     #[test]
     fn migration_adds_last_report_at_to_legacy_db() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("legacy.sqlite");
 
         // Stand up a "legacy" file with the old 17-column schema and one row.
@@ -2103,7 +2141,7 @@ mod tests {
             conn.execute_batch(PRE_REPORT_PET_STATE_SQL).unwrap();
             conn.execute(
                 "INSERT INTO pet_state (id, name, mood, hunger, energy, affection, boredom, curiosity, stress, trust, relationship_level, current_animation, current_intent, last_interaction_at, last_llm_call_at, created_at, updated_at)
-                 VALUES ('default', 'LegacyMochi', 'happy', 30, 80, 50, 20, 60, 10, 50, 1, 'idle', 'idle', NULL, NULL, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
+                 VALUES ('default', 'LegacyNYRC', 'happy', 30, 80, 50, 20, 60, 10, 50, 1, 'idle', 'idle', NULL, NULL, '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')",
                 [],
             ).unwrap();
         }
@@ -2115,7 +2153,7 @@ mod tests {
             .load_pet_state("default")
             .unwrap()
             .expect("legacy row must survive migration");
-        assert_eq!(state.name, "LegacyMochi");
+        assert_eq!(state.name, "LegacyNYRC");
         assert!(
             state.last_report_at.is_none(),
             "newly added column must default to NULL on legacy rows"
@@ -2135,7 +2173,7 @@ mod tests {
     /// duplicate-column error from sqlite, no panic from the migration helper).
     #[test]
     fn migration_is_idempotent_on_already_migrated_db() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let db_path = tmp.path().join("modern.sqlite");
         let _ = Db::open(&db_path).unwrap();
         let _ = Db::open(&db_path).expect("second open must not error");
@@ -2147,13 +2185,13 @@ mod tests {
     #[test]
     fn last_report_at_persists_across_restart() {
         use chrono::Duration;
-        let tmp = tempfile::tempdir().unwrap();
-        let db_path = tmp.path().join("mochi.sqlite");
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        let db_path = tmp.path().join("nyrc.sqlite");
 
         let saved_at = (Utc::now() - Duration::hours(13)).to_rfc3339();
         {
             let db = Db::open(&db_path).unwrap();
-            let mut state = PetState::new("Mochi");
+            let mut state = PetState::new("NYRC");
             state.id = "default".to_string();
             state.last_report_at = Some(saved_at.clone());
             db.save_pet_state(&state).unwrap();
@@ -2175,7 +2213,7 @@ mod tests {
                 noticed: Some("they yawned around 11pm".to_string()),
                 wants: Some("offer a quiet greeting tomorrow".to_string()),
                 prose: Some(
-                    "Twelve hours of mostly quiet, with three little play bursts and a cozy late-evening pat. The user seemed calm. Mochi watched the cursor wander and napped twice — sweet, ordinary time."
+                    "Twelve hours of mostly quiet, with three little play bursts and a cozy late-evening pat. The user seemed calm. NYRC watched the cursor wander and napped twice — sweet, ordinary time."
                         .to_string(),
                 ),
                 file_path: Some("dreams/2026-05-04-0000.md".to_string()),
@@ -2227,5 +2265,91 @@ mod tests {
         let rows = db.list_skills().expect("loader must not error");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "Notes");
+    }
+}
+
+#[cfg(test)] mod hardening_stress_tests {
+    use super::*;
+    #[test] fn independent_connections_claim_500_overdue_items_once_under_contention() {
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().canonicalize().unwrap().join("stress.db");let db=Db::open(&path).unwrap();
+        for i in 0..500 {db.create_scheduled_item(NewScheduledItem{kind:ScheduledItemKind::Reminder,title:format!("item {i}"),message:None,scheduled_at:"2026-10-05T00:00:00Z".into(),timezone:None,recurrence:None,metadata:None}).unwrap();}
+        let barrier=Arc::new(std::sync::Barrier::new(4));let mut handles=Vec::new();
+        for _ in 0..4 {let db=Db::open(&path).unwrap();let barrier=barrier.clone();handles.push(std::thread::spawn(move||{barrier.wait();db.claim_due_scheduled_items("2026-10-06T00:00:00.000Z").unwrap()}));}
+        let results:Vec<_>=handles.into_iter().flat_map(|h|h.join().unwrap()).collect();assert_eq!(results.len(),500);
+        let ids:std::collections::HashSet<_>=results.iter().map(|v|&v.id).collect();assert_eq!(ids.len(),500);
+        assert!(Db::open(&path).unwrap().claim_due_scheduled_items("2026-10-07T00:00:00.000Z").unwrap().is_empty());
+    }
+    #[test] fn rollback_and_mixed_writes_preserve_durable_state() {
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().canonicalize().unwrap().join("mixed.db");let db=Db::open(&path).unwrap();
+        {let mut conn=db.conn.lock();let tx=conn.transaction().unwrap();tx.execute("INSERT INTO settings(key,value,updated_at) VALUES('interrupted','never committed','2026-10-05T00:00:00Z')",[]).unwrap();}
+        assert!(db.get_setting("interrupted").unwrap().is_none());
+        let mut handles=Vec::new();for worker in 0..4 {let db=Db::open(&path).unwrap();handles.push(std::thread::spawn(move||{for i in 0..100 {crate::commands::save_pocket(&db,"text",&format!("{worker}-{i}"),"x".repeat(1024),1024).unwrap();db.put_setting(&format!("worker:{worker}"),&i.to_string()).unwrap();db.create_memory(NewMemory{r#type:"note".into(),content:format!("{worker}-{i}"),importance:None,confidence:None,source_interaction_id:None}).unwrap();}}));}for h in handles{h.join().unwrap();}
+        drop(db);let db=Db::open(&path).unwrap();for worker in 0..4{assert_eq!(db.get_setting(&format!("worker:{worker}")).unwrap().as_deref(),Some("99"));}assert_eq!(db.list_memories(1000).unwrap().len(),400);assert_eq!(db.list_pocket_items().unwrap().len(),100);
+    }
+    #[test] fn malformed_json_returns_error_without_poisoning_connection() {
+        let db=Db::open_in_memory().unwrap();db.conn.lock().execute("INSERT INTO pocket(id,item_json) VALUES('bad','not json')",[]).unwrap();assert!(db.list_pocket_items().is_err());db.delete_pocket_item("bad").unwrap();assert!(db.list_pocket_items().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)] mod failure_boundary_tests {
+    use super::*;
+    #[test] fn externally_reachable_integer_extremes_are_normalized_before_arithmetic() {
+        let db=Db::open_in_memory().unwrap();let mut pet=PetState::new("x".repeat(500));pet.affection=i32::MAX;pet.boredom=i32::MIN;pet.last_interaction_at=Some("bad".into());db.save_pet_state(&pet).unwrap();let pet=db.load_pet_state("default").unwrap().unwrap();assert_eq!(pet.affection,100);assert_eq!(pet.boredom,0);assert_eq!(pet.name.len(),40);assert!(pet.last_interaction_at.is_none());assert_eq!(pet.affection+1,101);
+    }
+    #[test] fn busy_database_waits_for_transaction_then_succeeds() {
+        let d=tempfile::tempdir().unwrap();let path=d.path().canonicalize().unwrap().join("busy.db");let db=Db::open(&path).unwrap();let other=Db::open(&path).unwrap();
+        let mut connection=db.conn.lock();let transaction=connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();let handle=std::thread::spawn(move||other.put_setting("after-lock","durable"));std::thread::sleep(std::time::Duration::from_millis(100));transaction.commit().unwrap();drop(connection);handle.join().unwrap().unwrap();assert_eq!(db.get_setting("after-lock").unwrap().as_deref(),Some("durable"));
+    }
+    #[cfg(unix)] #[test] fn read_only_storage_is_not_silently_made_writable() {
+        use std::os::unix::fs::PermissionsExt;let d=tempfile::tempdir().unwrap();let path=d.path().canonicalize().unwrap().join("read-only.db");drop(Db::open(&path).unwrap());std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o400)).unwrap();assert!(Db::open(&path).is_err());assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode()&0o777,0o400);
+    }
+}
+
+#[cfg(test)]
+mod release_acceptance_tests {
+    use super::*;
+    #[test]
+    fn pre_v1_upgrade_reinstall_and_clock_jump_preserve_user_data() {
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        let path = tmp.path().join("upgrade.db");
+        let db = Db::open(&path).unwrap();
+        let mut pet = PetState::new("Upgrade Companion");
+        pet.id = "default".into();
+        db.save_pet_state(&pet).unwrap();
+        db.put_setting("settings:v1", r#"{"petName":"Upgrade Companion","localOnlyMode":true,"providerKind":"openai","cloudApiKeySet":false}"#).unwrap();
+        db.put_setting("storage:migration:v1", "retained-marker").unwrap();
+        db.put_setting("calendar:v1", r#"{"enabled":false,"clientId":"public-reference","calendarId":"fixture"}"#).unwrap();
+        db.create_user_alias(NewUserAlias { phrase:"fixture docs".into(), target_type:"website".into(), target:"https://example.com".into() }).unwrap();
+        db.create_assistant_mode(NewAssistantMode { name:"Fixture".into(), actions:vec![serde_json::json!({"id":"time.now","payload":{}})] }).unwrap();
+        crate::commands::save_pocket(&db,"text","Upgrade Pocket","preserved".into(),1024).unwrap();
+        let reminder=db.create_scheduled_item(NewScheduledItem {kind:ScheduledItemKind::Reminder,title:"Wake fixture".into(),message:None,scheduled_at:"2026-10-05T10:01:00Z".into(),timezone:None,recurrence:None,metadata:None}).unwrap();
+        fn snapshot(db:&Db)->Vec<String>{
+            let conn=db.conn.lock();
+            ["settings","pocket","user_aliases","assistant_modes"].into_iter().flat_map(|table|{
+                let mut stmt=conn.prepare(&format!("SELECT * FROM {table} ORDER BY 1")).unwrap();
+                let count=stmt.column_count();
+                stmt.query_map([],|row|Ok((0..count).map(|i|format!("{:?}",row.get_ref(i).unwrap())).collect::<Vec<_>>().join("|"))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap()
+            }).collect()
+        }
+        let expected=snapshot(&db);
+        db.conn.lock().execute_batch("ALTER TABLE pet_state DROP COLUMN last_report_at; PRAGMA user_version=0;").unwrap();
+        drop(db);
+        for _ in 0..3 {
+            let reopened=Db::open(&path).unwrap();
+            assert_eq!(snapshot(&reopened),expected);
+            assert_eq!(reopened.load_pet_state("default").unwrap().unwrap().name,"Upgrade Companion");
+            assert_eq!(reopened.list_scheduled_items(None).unwrap().len(),1);
+            assert!(reopened.claim_due_scheduled_items("2026-10-05T10:00:30Z").unwrap().is_empty());
+        }
+        let resumed=Db::open(&path).unwrap();
+        // No timer polls occur across this deadline jump, as during suspension.
+        let claimed=resumed.claim_due_scheduled_items("2026-10-05T10:40:00Z").unwrap();
+        assert_eq!(claimed.len(),1);assert_eq!(claimed[0].id,reminder.id);
+        assert!(resumed.claim_due_scheduled_items("2026-10-05T10:40:01Z").unwrap().is_empty());
+        drop(resumed);
+        let restarted=Db::open(&path).unwrap();
+        assert_eq!(restarted.get_scheduled_item(&reminder.id).unwrap().unwrap().status,ScheduledItemStatus::Triggered);
+        assert!(restarted.claim_due_scheduled_items("2026-10-05T10:41:00Z").unwrap().is_empty());
+        assert_eq!(snapshot(&restarted),expected);
     }
 }

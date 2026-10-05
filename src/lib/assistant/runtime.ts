@@ -1,3 +1,4 @@
+import { CapabilityRegistry } from "../platform/capabilities";
 import { TaskManager } from "../tasks/taskManager";
 import { LocalUtilityExecutor } from "../tasks/localUtilityExecutor";
 import { DesktopAssistantExecutor } from "../tasks/desktopAssistantExecutor";
@@ -8,7 +9,7 @@ import {
   type CompanionAction,
 } from "../tasks/action";
 import { api } from "../bridge/api";
-import { invoke } from "../bridge/tauri";
+import { invoke, invokeService } from "../bridge/tauri";
 import { localRoute, type Entities, type Route } from "./router";
 import { validateProposal } from "./proposals";
 import {
@@ -27,6 +28,14 @@ export class AssistantRuntime {
   private calendarHours = 0;
   private interactions: { at: number; text: string }[] = [];
   private developerResults: { at: number; ok: boolean }[] = [];
+  private bodyInteractions: {at:number;text:string}[]=[];
+  observeBody(type:string) {
+    if(["touch","hold","double_tap","shake","pickup","put_down","sleep","wake"].includes(type)) {
+      this.bodyInteractions.push({at:Date.now(),text:type});
+      this.interactions.push({at:Date.now(),text:`body:${type}`});
+      this.adapt({});
+    }
+  }
   observeDeveloper(type: string) {
     if (/passed|success|completed|failed/.test(type))
       this.developerResults.push({ at: Date.now(), ok: !/failed/.test(type) });
@@ -45,6 +54,7 @@ export class AssistantRuntime {
     this.interactions = this.interactions
       .filter((e) => e.at >= cutoff)
       .slice(-50);
+    this.bodyInteractions=this.bodyInteractions.filter(e=>e.at>=cutoff).slice(-50);
     this.estimatedState = estimateState({
       hour: new Date().getHours(),
       successes:
@@ -64,6 +74,7 @@ export class AssistantRuntime {
         (e) => e.text === this.interactions.at(-1)?.text,
       ).length,
       calendarHours: this.calendarHours,
+      body:{shakes:this.bodyInteractions.filter(e=>e.text==="shake").length,pickups:this.bodyInteractions.filter(e=>e.text==="pickup").length,absence:this.bodyInteractions.at(-1)?.text==="sleep"},
       manual: this.manual,
     });
     return adaptation(this.estimatedState);
@@ -79,8 +90,10 @@ export class AssistantRuntime {
       canExecute: (a) =>
         /^(pocket|calendar|clipboard)\./.test(a.id) ||
         a.id === "developer.task.status",
-      execute: (a) =>
-        invoke("assistant_service", { action: a.id, payload: a.payload })
+      execute: async (a, signal) => {
+        const blocked=await new CapabilityRegistry().check(a.id);
+        if(blocked)return actionFailure(blocked.code,blocked.message);
+        return invokeService(a.id, a.payload, signal)
           .then((data) => ({ ok: true as const, data }))
           .catch((error: unknown) =>
             actionFailure(
@@ -89,7 +102,8 @@ export class AssistantRuntime {
                 ? error
                 : "The service is unavailable. Check its settings and try again.",
             ),
-          ),
+          );
+      },
     };
     const all = executors ?? [
       new LocalUtilityExecutor(timers),
@@ -99,10 +113,10 @@ export class AssistantRuntime {
     ];
     this.executor = {
       canExecute: (a) => all.some((e) => e.canExecute(a)),
-      execute: async (a) => {
+      execute: async (a, signal) => {
         const e = all.find((e) => e.canExecute(a));
         return e
-          ? e.execute(a)
+          ? e.execute(a, signal)
           : actionFailure("unsupported_action", "This action is unavailable.");
       },
     };
@@ -111,6 +125,7 @@ export class AssistantRuntime {
     input: string,
     entities: Entities = {},
   ): Promise<{ route: Route; task?: CompanionTask; message: string }> {
+    if (!input.trim() || input.length > 2000) return { route: {source: "clarification", confidence: 0}, message: "Use a request of at most 2,000 characters." };
     this.interactions.push({
       at: Date.now(),
       text: input.trim().toLowerCase(),
@@ -218,26 +233,27 @@ export class AssistantRuntime {
 export function taskMessage(t: CompanionTask): string {
   if (t.status === "permission_required") return "Ready when you approve.";
   if (t.status === "failed")
-    return t.error?.message ?? "That did not complete.";
+    return t.action.id.startsWith("calendar.") ? "Calendar couldn’t complete that. Check its connection in Settings." : t.error?.code === "permission_denied" ? "Action denied." : "Couldn’t complete that action. Local features remain available.";
   const v = t.result as Record<string, unknown> | undefined;
   if (t.action.id === "time.current" && typeof v?.iso === "string")
     return new Date(v.iso).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
+  if(t.action.id === "timer.create") return `Timer started${v?.label ? ": " + v.label : "."}`;
   if (typeof v?.volume === "number") return `Volume: ${v.volume}%`;
   if (typeof v?.muted === "boolean") return v.muted ? "Muted." : "Unmuted.";
   if (typeof v?.scheduledAt === "string")
     return `Scheduled: ${v.title} · ${new Date(v.scheduledAt).toLocaleString()}`;
   if (t.action.id.startsWith("pocket.save") && typeof v?.id === "string")
-    return `Saved: ${v.title} [${v.id}]`;
+    return `Saved: ${v.title}`;
   if (Array.isArray(t.result))
     return t.result.length
       ? t.result
           .slice(0, 30)
           .map(
             (i: any) =>
-              `${i.title ?? i.label ?? i.summary ?? i.id}${i.id ? ` [${i.id}]` : ""}${i.start ? ` · ${typeof i.start === "string" ? i.start : (i.start.dateTime ?? i.start.date)}` : ""}`,
+              `${i.title ?? i.label ?? i.summary ?? "Saved item"}${i.start ? ` · ${typeof i.start === "string" ? i.start : (i.start.dateTime ?? i.start.date)}` : ""}`,
           )
           .join("\n")
       : "Nothing here yet.";
@@ -246,7 +262,7 @@ export function taskMessage(t: CompanionTask): string {
     v?.itemType === "file" &&
     (v.metadata as { encoding?: string })?.encoding === "base64"
   )
-    return "Binary file retrieved. Use “export pocket <id>” to save a copy in NYRC exports.";
+    return "File ready. Export it to keep a copy.";
   if (typeof v?.message === "string") return normalizeReply(v.message);
   if (typeof v?.content === "string")
     return normalizeReply(v.content, {

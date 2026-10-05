@@ -27,7 +27,8 @@ const tauriNotifications: ScheduledNotificationAdapter = {
   send: (title, body) => sendNotification({ title, body }),
 };
 
-export function createScheduledNotifications(adapter: ScheduledNotificationAdapter) {
+export function createScheduledNotifications(adapter: ScheduledNotificationAdapter, now: () => number = Date.now) {
+  let sentAt: number[] = [];
   async function permission(): Promise<ScheduledNotificationPermission> {
     if (!adapter.available()) return "unavailable";
     try {
@@ -59,7 +60,11 @@ export function createScheduledNotifications(adapter: ScheduledNotificationAdapt
   async function send(title: string, body: string): Promise<boolean> {
     if (await permission() !== "granted") return false;
     try {
-      adapter.send(title, body);
+      const at = now();
+      sentAt = sentAt.filter(t => at >= t && at - t < 10000);
+      if (sentAt.length >= 3) return false; // all alerts remain in the bounded in-app queue and durable reminder list
+      sentAt.push(at);
+      adapter.send(title.slice(0,200), body.slice(0,1000));
       return true;
     } catch (error) {
       console.warn("scheduled desktop notification failed", error);

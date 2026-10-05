@@ -1,4 +1,4 @@
-# Pet Mochi — Feature Improvements Decisions
+# NYRC — Feature Improvements Decisions
 
 **Date:** 2026-05-04
 **Scope:** Address pending BACKLOG.md items with best-practice fixes.
@@ -22,7 +22,7 @@ Implementation was kept surgical (one concern per change, no adjacent
 
 ### 1. Mood-distinguishing glyphs — BACKLOG #19 (LOW)
 
-**Files:** `src/lib/components/MochiSprite.svelte`
+**Files:** `src/lib/components/SpriteRenderer.svelte`
 
 `hungry`, `bored`, `lonely`, and `tired` all use desaturated/dim mood
 filters that read nearly identical at a glance. Only `curious` had a
@@ -56,10 +56,10 @@ the default-pet test starts in `idle`, not `sleep`.
 
 ### 3. Redundant aria-label removal — BACKLOG #16 (LOW)
 
-**Files:** `src/lib/components/MochiSprite.svelte`
+**Files:** `src/lib/components/SpriteRenderer.svelte`
 
-The pet button already has `aria-label="Mochi"`. The inner `<img>` had
-`alt="Mochi pet"`, so screen readers announced "Mochi… Mochi pet" back
+The pet button already has `aria-label="NYRC"`. The inner `<img>` had
+`alt="NYRC pet"`, so screen readers announced "NYRC… NYRC pet" back
 to back.
 
 Fix: `alt=""` on the image. This is the canonical pattern for decorative
@@ -116,7 +116,7 @@ text input to crowd the dock. **Obsolete — backlog entry can be deleted.**
     timing during wake-up) verified — `playSteps` sets the first frame
     synchronously so no flash occurs. MEDIUM #2 (`alt=""` only valid
     inside a labeled container) accepted; component is currently used
-    only inside the `aria-label="Mochi"` button.
+    only inside the `aria-label="NYRC"` button.
   - `typescript-reviewer`: 0 CRITICAL/HIGH; 2 MEDIUM both fixed
     (`bored` glyph also suppressed during `yawn`; redundant
     `expect(animations[0]).toBe(...)` removed in favor of single

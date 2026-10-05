@@ -66,7 +66,7 @@ for the research summary and sources.
   plus dizzy→shake recovery for drops ≥200 logical px.
 - **REQ-113** — `animationIntensity` (0–1.5) scales particles and quirk
   chance, 0 disables both; Settings broadcasts `settings:changed` so the
-  overlay updates live. Removed the dead blink interval (MochiSprite ignores
+  overlay updates live. Removed the dead blink interval (SpriteRenderer ignores
   the prop by design). No new persistent timers were added anywhere.
 
 ## Stage backgrounds (REQ-114, user-requested mid-release)
@@ -86,7 +86,7 @@ for the research summary and sources.
   reopens; the view reloads on window focus so memories/keepsakes/reports
   stay fresh. Audit: no UI path to Settings existed at all since v0.1.
 - **REQ-116** — snack-specific eat sprites: 4 new hand-drawn-style frames
-  (`mochi-eat-strawberry-1/2.png`, `mochi-eat-cookie-1/2.png`) generated
+  (`companion-eat-strawberry-1/2.png`, `companion-eat-cookie-1/2.png`) generated
   with GPT Image 2 from the original dango frames as style references,
   background-stripped through the same corner-detect + flood-fill pipeline
   (1254×1254, verified alpha). New `MovementState` literals + SRC entries +

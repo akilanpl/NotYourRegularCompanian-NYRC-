@@ -330,3 +330,28 @@ describe("REQ-121 planMonitorCrossing — multi-monitor roaming", () => {
     expect(out).toBeNull();
   });
 });
+
+
+describe("mixed-DPI monitor adjacency", () => {
+  const first = { id: "one", x: 0, y: 0, width: 1920, height: 1080, scaleFactor: 1 };
+  const second = { id: "scaled", x: 1536, y: 0, width: 2048, height: 1152, scaleFactor: 1.25 };
+  const viewport = { width: 360, height: 360 };
+  it("crosses physically touching monitors despite overlapping logical rectangles", () => {
+    const plan = planMonitorCrossing({x:1560,y:100},{x:220,y:60},[first,second],"one","curious",()=>0,viewport,140);
+    expect(plan?.targetMonitorId).toBe("scaled");
+    expect(plan?.winPosAfter).toEqual({x:1536,y:80});
+  });
+  it("converts the absolute y position back to the target monitor's scale on return", () => {
+    const plan = planMonitorCrossing({x:1536,y:80},{x:0,y:60},[first,second],"scaled","bored",()=>0,viewport,140);
+    expect(plan?.winPosAfter).toEqual({x:1560,y:100});
+  });
+  it("clamps using physical overlap and target logical window bounds", () => {
+    const lowered = {...second,y:320};
+    const plan = planMonitorCrossing({x:1560,y:50},{x:220,y:60},[first,lowered],"one","curious",()=>0,viewport,140);
+    expect(plan?.winPosAfter).toEqual({x:1536,y:320});
+  });
+  it("rejects a true physical gap hidden by per-monitor logical geometry", () => {
+    const separated = {...second,x:1600};
+    expect(planMonitorCrossing({x:1560,y:100},{x:220,y:60},[first,separated],"one","curious",()=>0,viewport,140)).toBeNull();
+  });
+});

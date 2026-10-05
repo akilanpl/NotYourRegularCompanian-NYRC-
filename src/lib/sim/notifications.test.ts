@@ -189,15 +189,15 @@ describe("REQ-122 notificationCopy — kind copy, zero guilt", () => {
 
   it("mentions the pet's name in every title", () => {
     for (const kind of KINDS) {
-      const copy = notificationCopy(kind, "Mochi");
-      expect(copy.title).toContain("Mochi");
+      const copy = notificationCopy(kind, "NYRC");
+      expect(copy.title).toContain("NYRC");
       expect(copy.body.length).toBeGreaterThan(0);
     }
   });
 
   it("contains no forbidden phrase in any title or body", () => {
     for (const kind of KINDS) {
-      const { title, body } = notificationCopy(kind, "Mochi");
+      const { title, body } = notificationCopy(kind, "NYRC");
       for (const pattern of FORBIDDEN) {
         expect(pattern.test(title), `${kind} title "${title}" vs ${pattern}`).toBe(false);
         expect(pattern.test(body), `${kind} body "${body}" vs ${pattern}`).toBe(false);

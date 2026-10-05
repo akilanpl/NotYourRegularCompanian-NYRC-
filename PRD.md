@@ -234,7 +234,7 @@ When the user drops a `.txt`, `.md`, or `.json` file into the pet inbox:
 
 ### 7.7 Idle-Triggered Status Report
 
-Roughly every 12 hours, during an idle window (pet is in a calm resting pose — `idle`/`sit`/`look_cursor`/`sleep` — with no active action sequence), Mochi compiles a short status report covering the previous 12-hour window:
+Roughly every 12 hours, during an idle window (pet is in a calm resting pose — `idle`/`sit`/`look_cursor`/`sleep` — with no active action sequence), NYRC compiles a short status report covering the previous 12-hour window:
 
 - one thing it learned
 - one thing it noticed about the user
@@ -1190,7 +1190,7 @@ The final MVP should be summarized as:
 
 ## 27. v0.2 — The Adorable Update (Cuteness & Attachment)
 
-**Goal:** Mochi should be the kind of pet you keep coming back to poke, feed,
+**Goal:** NYRC should be the kind of pet you keep coming back to poke, feed,
 and play with. The assistant features (notes, reports, file summaries) already
 exist; v0.2 makes the *creature* irresistible. Every feature in this section
 must work fully — end to end, tested, and within the performance budget —
@@ -1318,7 +1318,7 @@ ritual must not wait for the network.
 
 **REQ-109:** Keepsake gifts + shelf: after sustained good care (affection
 ≥ 70 AND trust ≥ 55 at evaluation time) and ≥ 20h since the last keepsake,
-Mochi leaves exactly one trinket — a deterministic pick from a 12-item
+NYRC leaves exactly one trinket — a deterministic pick from a 12-item
 emoji table seeded by (pet id, date) — presented with a delight choreography
 and a "for you ♡" bubble, and stored as a durable memory of type
 `keepsake` via the existing `create_memory` command. Settings → Memory
@@ -1434,7 +1434,7 @@ logic and a full check run before the next step starts.
 > `feat/environment-pack`.
 
 **Amendment to §27.2 principle 1** ("no notifications"): with **explicit
-user opt-in** (default off), Mochi may send an OS notification when a need
+user opt-in** (default off), NYRC may send an OS notification when a need
 crosses critical (hunger > 85, energy < 12, stress > 80). Copy stays kind,
 never guilty (REQ-108 vocabulary); per-kind 60-min and global 30-min
 cooldowns, a 10-min boot grace, and suppression while the settings window is
@@ -1458,10 +1458,10 @@ focus, and never fire while the user is dragging the window.
 
 **REQ-121:** Multi-monitor roaming: occasionally (seeded, ≤ ~1 crossing per
 10 idle minutes, curious/bored moods only) the pet walks off one monitor's
-edge and re-enters on the adjacent monitor. *Known limitation:* adjacency is
-computed in per-monitor logical space, so crossings are disabled on
-mixed-DPI setups where per-monitor scale factors differ (the no-op is
-silent and safe); tracked in BACKLOG for a single-space rewrite.
+edge and re-enters on the adjacent monitor. Adjacency and overlap are
+compared in physical desktop space; the landing position is converted into
+the target monitor’s logical scale before the bridge applies it. Mixed-DPI
+fixtures cover both crossing directions, y clamping and real physical gaps.
 
 **REQ-122:** Opt-in critical-need desktop notifications per the §27.2
 amendment above. Pure gate in `sim/notifications.ts` (kind, zero-guilt copy

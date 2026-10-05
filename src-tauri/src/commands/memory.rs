@@ -36,7 +36,8 @@ pub fn search_memories(state: State<'_, AppState>, query: String, limit: Option<
 }
 
 #[tauri::command]
-pub fn export_memories(state: State<'_, AppState>, format: String) -> AppResult<String> {
+pub async fn export_memories(app: tauri::AppHandle, state: State<'_, AppState>, format: String) -> AppResult<String> {
+    crate::authority::confirm(app, "memory.export", &serde_json::json!({"name":"Local memory export"})).await?;
     let memories = state.db.list_memories(10_000)?;
     let stamp = Utc::now().format("%Y%m%d-%H%M%S");
     let (file_name, contents) = match format.as_str() {

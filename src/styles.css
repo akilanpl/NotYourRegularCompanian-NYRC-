@@ -1,15 +1,41 @@
 :root {
-  --mochi-bg: rgba(255, 240, 245, 0);
-  --mochi-text: #2c2030;
-  --mochi-pink: #ffc6d3;
-  --mochi-deep-pink: #ff8aa6;
-  --mochi-cream: #fff7ec;
-  --mochi-shadow: rgba(0, 0, 0, 0.18);
-  font-family: "Inter", "Noto Sans KR", -apple-system, system-ui, sans-serif;
-  color: var(--mochi-text);
+  --nyrc-bg: transparent;
+  --surface: #181e26;
+  --surface-raised: #232b36;
+  --glass: rgba(20, 26, 34, 0.97);
+  --border: #3b4553;
+  --text: #edf1f6;
+  --muted: #aeb9c7;
+  --accent: #abcce9;
+  --success: #98cdb4;
+  --warning: #e8c68b;
+  --error: #f1aaaa;
+  --radius: 14px;
+  --space: 8px;
+  --shadow: 0 12px 32px #0004;
+  --motion: 180ms;
+  --blur: 12px;
+  --z-dialog: 50;
+  --nyrc-text: var(--text);
+  --nyrc-pink: var(--surface-raised);
+  --nyrc-deep-pink: var(--accent);
+  --nyrc-cream: var(--surface);
+  --nyrc-shadow: #0004;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    system-ui,
+    sans-serif;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
 }
-
+* {
+  box-sizing: border-box;
+}
 html,
 body {
   margin: 0;
@@ -17,121 +43,130 @@ body {
   background: transparent;
   overflow: hidden;
   user-select: none;
-  -webkit-user-select: none;
 }
-
 #app {
   width: 100vw;
   height: 100vh;
-  background: transparent;
   position: relative;
 }
-
-button {
-  font-family: inherit;
-  border: 0;
-  background: var(--mochi-pink);
-  color: var(--mochi-text);
-  padding: 6px 12px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: background 120ms ease;
-  min-height: 32px;
-}
-
-button:hover {
-  background: #c2185b;
-  color: white;
-}
-
+button,
 input,
 textarea,
 select {
-  font-family: inherit;
-  font-size: 13px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #e7d1da;
-  outline: none;
-  background: white;
-  color: var(--mochi-text);
+  font: inherit;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  min-height: 36px;
+  padding: 7px 11px;
+  background: var(--surface-raised);
 }
-
+button {
+  cursor: pointer;
+  transition: background var(--motion);
+}
+button:hover {
+  background: #354252;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+input,
+textarea,
+select {
+  background: #111820;
+  min-width: 0;
+  max-width: 100%;
+  user-select: text;
+}
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: var(--mochi-deep-pink);
+  border-color: var(--accent);
 }
-
-button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--mochi-deep-pink);
-  outline-offset: 2px;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
-
-/* Settings panel uses an opaque page background. The global overflow:hidden
-   above is for the pet overlay; the settings window has real content that can
-   exceed the viewport, so the body becomes a fixed-height scroll container
-   (html stays overflow:hidden, so body must own the scrolling) (REQ-115). */
+label {
+  display: grid;
+  gap: 5px;
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0 0 12px;
+}
+h1 {
+  font-size: 22px;
+  letter-spacing: -0.6px;
+}
+h2 {
+  font-size: 17px;
+}
+h3 {
+  font-size: 14px;
+}
+small,
+.muted {
+  color: var(--muted);
+}
+a {
+  color: var(--accent);
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.stack {
+  display: grid;
+  gap: 12px;
+}
+.primary {
+  background: #aac7e0;
+  color: #111820;
+  border-color: #aac7e0;
+}
 body.settings-page {
-  background: var(--mochi-cream);
+  background: #11161d;
   height: 100vh;
   overflow-y: auto;
 }
-
 body.settings-page #app {
   height: auto;
   min-height: 100vh;
 }
-
-body.settings-page,
-body.settings-page * {
+body.settings-page {
   user-select: text;
-  -webkit-user-select: text;
 }
-
-/* Browser-only preview background so the cream sprite is visible outside the
-   transparent Tauri overlay window. */
 body.browser-preview {
-  background:
-    linear-gradient(135deg, #fff5f8 0%, #f3e9ee 100%);
+  background: #343d49;
 }
-
-/* REQ-114 — user-selectable stage background behind the pet. The default
-   ("transparent") has no rule so the classic desktop overlay stays intact;
-   themed values render a soft rounded card on the #app stage. */
-body[data-stage-background="cream"] #app,
-body[data-stage-background="blossom"] #app,
-body[data-stage-background="mint"] #app,
-body[data-stage-background="night"] #app {
-  border-radius: 18px;
+details > summary {
+  cursor: pointer;
+  padding: 10px 0;
 }
-
-body[data-stage-background="cream"] #app {
-  background: linear-gradient(160deg, #fffdf7 0%, #fff1e0 100%);
+textarea {
+  resize: vertical;
+  width: 100%;
 }
-
-body[data-stage-background="blossom"] #app {
-  background: linear-gradient(160deg, #fff5f8 0%, #ffdfeb 100%);
-}
-
-body[data-stage-background="mint"] #app {
-  background: linear-gradient(160deg, #f2fff9 0%, #dcf5e9 100%);
-}
-
-body[data-stage-background="night"] #app {
-  background: linear-gradient(160deg, #2c2440 0%, #1c1730 100%);
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    animation: none !important;
+    transition: none !important;
     scroll-behavior: auto !important;
   }
 }

@@ -6,7 +6,7 @@ import { clamp, type PetState } from "./state";
  * scale linearly with seconds elapsed so longer ticks behave reasonably.
  */
 export function applyDecay(state: PetState, elapsedSeconds: number): PetState {
-  if (elapsedSeconds <= 0) return state;
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) return state;
 
   // Per-second deltas. Tuned for tamagotchi-feel visibility — bars should
   // drift noticeably within a minute or two so the user actually sees the

@@ -27,6 +27,13 @@ pub struct PetState {
 }
 
 impl PetState {
+    pub fn normalize(&mut self) {
+        for stat in [&mut self.hunger,&mut self.energy,&mut self.affection,&mut self.boredom,&mut self.curiosity,&mut self.stress,&mut self.trust,&mut self.relationship_level] { *stat = (*stat).clamp(0,100); }
+        self.name = self.name.chars().filter(|c| !c.is_control()).take(40).collect();
+        if self.name.trim().is_empty(){self.name="Companion".into();}
+        self.mood = self.mood.chars().filter(|c|!c.is_control()).take(32).collect();
+        for value in [&mut self.last_interaction_at,&mut self.last_llm_call_at,&mut self.last_report_at] { if value.as_ref().is_some_and(|s|DateTime::parse_from_rfc3339(s).is_err()){*value=None;} }
+    }
     pub fn new(name: impl Into<String>) -> Self {
         let now = Utc::now().to_rfc3339();
         Self {
@@ -324,6 +331,10 @@ pub struct Skill {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
+    #[serde(default)]
+    pub onboarding_complete: bool,
+    #[serde(default)]
+    pub desktop_roaming: bool,
     pub pet_name: String,
     pub personality_preset: String,
     #[serde(default)]
@@ -393,6 +404,8 @@ pub fn normalize_stage_background(value: &str) -> &'static str {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            onboarding_complete: false,
+            desktop_roaming: false,
             pet_name: "NYRC".to_string(),
             personality_preset: "curious".to_string(),
             personality: crate::personality::Personality::default(),
@@ -485,12 +498,26 @@ mod model_tests {
     /// still deserialize, defaulting to the transparent overlay and sounds on.
     #[test]
     fn settings_legacy_json_defaults_new_fields() {
-        let legacy = r#"{"petName":"Mochi","personalityPreset":"curious","llmProvider":"ollama","ollamaEndpoint":"http://localhost:11434","ollamaModel":"gemma4:e2b","localOnlyMode":true,"autonomousSpeech":true,"memoryEnabled":true,"animationIntensity":1.0,"alwaysOnTop":true,"startOnLogin":false,"petHomePath":null,"developerEventLog":false}"#;
+        let legacy = r#"{"petName":"NYRC","personalityPreset":"curious","llmProvider":"ollama","ollamaEndpoint":"http://localhost:11434","ollamaModel":"gemma4:e2b","localOnlyMode":true,"autonomousSpeech":true,"memoryEnabled":true,"animationIntensity":1.0,"alwaysOnTop":true,"startOnLogin":false,"petHomePath":null,"developerEventLog":false}"#;
         let s: Settings = serde_json::from_str(legacy).unwrap();
         assert_eq!(s.stage_background, "transparent");
         assert!(s.sound_effects);
         // REQ-122 — notifications are opt-in; legacy blobs default to off.
         assert!(!s.desktop_notifications);
+        assert!(!s.onboarding_complete);
+        assert!(!s.desktop_roaming);
+    }
+
+    #[test]
+    fn companion_setup_survives_settings_roundtrip() {
+        let mut settings = Settings::default();
+        settings.pet_name = "Nova".into();
+        settings.onboarding_complete = true;
+        settings.personality_preset = "Quiet".into();
+        let decoded: Settings = serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(decoded.pet_name,"Nova");
+        assert!(decoded.onboarding_complete);
+        assert_eq!(decoded.personality_preset,"Quiet");
     }
 
     #[test]

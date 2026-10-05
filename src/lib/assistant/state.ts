@@ -8,6 +8,7 @@ export type StateSignals = {
   interactions?: number;
   repeatedInteractions?: number;
   calendarHours?: number;
+  body?: {shakes:number;pickups:number;absence:boolean};
   manual?: Partial<Dimensions>;
 };
 export type Dimensions = {
@@ -67,13 +68,16 @@ export function estimateState(s: StateSignals) {
     d.fatigue += 0.1;
     factors.push("calendar workload");
   }
+  if(s.body?.shakes) {d.arousal+=Math.min(.15,s.body.shakes*.04);factors.push("recent body movement (uncertain)");}
+  if(s.body?.pickups) {d.engagement+=.05;factors.push("recent body interaction");}
+  if(s.body?.absence) {d.engagement-=.1;factors.push("body sleeping; user presence uncertain");}
   for (const k of Object.keys(d) as (keyof Dimensions)[]) {
     const manual = s.manual?.[k];
     if (manual !== undefined && Number.isFinite(manual)) {
       d[k] = manual;
       factors.push(`manual ${k}`);
     }
-    d[k] = Math.max(0, Math.min(1, d[k]));
+    d[k] = Number.isFinite(d[k]) ? Math.max(0, Math.min(1, d[k])) : 0.5;
   }
   const label =
     d.focus > 0.65

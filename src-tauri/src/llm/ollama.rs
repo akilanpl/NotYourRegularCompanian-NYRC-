@@ -93,10 +93,11 @@ impl LlmProvider for OllamaProvider {
                 )));
             }
 
-            let parsed: GenerateResponse = resp.json().await.map_err(|e| {
-                log::warn!("ollama returned invalid json: {e}");
-                AppError::LlmUnavailable("ollama returned an invalid response".into())
-            })?;
+            let parsed: GenerateResponse = serde_json::from_value(super::cloud::bounded_json(resp).await?)
+                .map_err(|_| AppError::LlmUnavailable("ollama returned an invalid response".into()))?;
+            if parsed.response.trim().is_empty() || parsed.response.len() > 65536 || parsed.model.len() > 150 {
+                return Err(AppError::LlmUnavailable("ollama returned an invalid response".into()));
+            }
 
             Ok(LlmResponse {
                 text: parsed.response.trim().to_string(),

@@ -100,5 +100,5 @@ export function actionFailure(
 
 export interface ActionExecutor {
   canExecute(action: CompanionAction): boolean | Promise<boolean>;
-  execute(action: CompanionAction): Promise<ActionResult>;
+  execute(action: CompanionAction, signal?: AbortSignal): Promise<ActionResult>;
 }

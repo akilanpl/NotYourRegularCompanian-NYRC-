@@ -38,3 +38,7 @@ codex-uiux-prompt.md
 # Local agent / shell crash artifacts
 .claude/
 *.stackdump
+
+# Generated release packages and signing overrides
+release-artifacts/
+signing-config.json

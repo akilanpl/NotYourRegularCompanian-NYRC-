@@ -217,3 +217,10 @@ describe("SchedulerRuntime", () => {
     runtime.dispose();
   });
 });
+
+it("disposal during claim suppresses late alerts and refresh",async()=>{
+ const backend=new FakeBackend([scheduled(reminderId,"reminder","2026-10-05T00:00:00.000Z")]);
+ let finish!:(items:ScheduledItem[])=>void;backend.claimDueScheduledItems=async()=>new Promise(resolve=>finish=resolve);
+ const runtime=new SchedulerRuntime(backend,()=>new Date("2026-10-05T01:00:00Z"),()=>()=>{});const alert=vi.fn();runtime.subscribeDue(alert);
+ const starting=runtime.start();await Promise.resolve();await Promise.resolve();await Promise.resolve();runtime.dispose();finish([backend.items[0]]);await starting;expect(alert).not.toHaveBeenCalled();
+});

@@ -363,7 +363,7 @@ describe("computeAwayMinutes / persistence regression", () => {
     const now = Date.parse("2026-05-03T12:30:00Z");
     const awayMinutesExpected = 90;
     const past = new Date(now - awayMinutesExpected * 60_000).toISOString();
-    const before: PetState = { ...newPetState("Mochi"), lastInteractionAt: past };
+    const before: PetState = { ...newPetState("NYRC"), lastInteractionAt: past };
 
     // Simulate the bridge: save_pet_state serializes via serde → JSON →
     // load_pet_state deserializes. We round-trip through JSON to mirror the
@@ -438,4 +438,10 @@ describe("roundStats (persistence boundary)", () => {
     expect(r.id).toBe(s.id);
     expect(r.name).toBe(s.name);
   });
+});
+
+it("keeps three accelerated days of simulation bounded and finite",()=>{
+ let state=newPetState();
+ for(let i=0;i<86400;i++)state=runTick(state,{...ctx,timeOfDay:i%28800>22000?"night":"afternoon"},3);
+ for(const key of ["hunger","energy","affection","boredom","curiosity","stress","trust"] as const){expect(Number.isFinite(state[key])).toBe(true);expect(state[key]).toBeGreaterThanOrEqual(0);expect(state[key]).toBeLessThanOrEqual(100);}
 });

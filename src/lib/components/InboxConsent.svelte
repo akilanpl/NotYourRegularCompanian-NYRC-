@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Consent prompt for inbox files. Asks the user before Mochi reads any file
+   * Consent prompt for inbox files. Asks the user before NYRC reads any file
    * dropped into the sandbox (PRD §21.10 / REQ-084).
    *
    * - "Read" calls `approve_file` and dismisses on success.
@@ -76,7 +76,7 @@
 
   onMount(async () => {
     await tick();
-    primaryBtn?.focus();
+    secondaryBtn?.focus();
   });
 </script>
 
@@ -124,14 +124,14 @@
 
 <style>
   .consent {
-    background: #fff;
-    color: var(--mochi-text);
+    background: var(--surface);
+    color: var(--nyrc-text);
     border-radius: 14px;
     padding: 12px 14px 10px;
     font-size: 13px;
     line-height: 1.4;
     box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid var(--surface-raised);
     min-width: 220px;
     max-width: 260px;
     animation: pop 220ms cubic-bezier(0.34, 1.4, 0.64, 1) both;
@@ -145,14 +145,14 @@
     word-break: break-word;
   }
   .desc code {
-    background: rgba(0, 0, 0, 0.06);
+    background: var(--surface-raised);
     padding: 1px 5px;
     border-radius: 4px;
     font-size: 12px;
   }
   .error {
     margin: 0 0 8px;
-    color: #b3261e;
+    color: var(--error);
     font-size: 12px;
   }
   .row {
@@ -173,23 +173,23 @@
     cursor: default;
   }
   .primary {
-    background: #ffb3c1;
-    color: var(--mochi-text);
+    background: var(--surface-raised);
+    color: var(--nyrc-text);
   }
   .primary:hover:not(:disabled) {
-    background: #ff9bad;
+    background: #354252;
   }
   .secondary {
-    background: rgba(0, 0, 0, 0.06);
-    color: var(--mochi-text);
+    background: var(--surface-raised);
+    color: var(--nyrc-text);
   }
   .secondary:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.1);
+    background: #354252;
   }
   .queue {
     margin: 8px 0 0;
     font-size: 11px;
-    color: rgba(0, 0, 0, 0.55);
+    color: var(--muted);
   }
   @keyframes pop {
     from {

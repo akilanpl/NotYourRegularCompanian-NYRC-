@@ -22,7 +22,8 @@ pub fn list_inbox_files(state: State<'_, AppState>) -> AppResult<Vec<InboxFile>>
 /// Approve and summarize an inbox file by *file name only*. Absolute paths and
 /// path traversal sequences are rejected upstream by `read_inbox_by_name`.
 #[tauri::command]
-pub async fn approve_file(state: State<'_, AppState>, file_name: String) -> AppResult<String> {
+pub async fn approve_file(app: tauri::AppHandle, state: State<'_, AppState>, file_name: String) -> AppResult<String> {
+    crate::authority::confirm(app, "inbox.approve", &serde_json::json!({"name":file_name})).await?;
     let home = state.pet_home.clone();
     let db = state.db.clone();
     let llm_slot = state.llm.clone();
