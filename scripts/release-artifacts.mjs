@@ -9,6 +9,8 @@ const version=JSON.parse(fs.readFileSync('package.json')).version;
 const [platform,arch]=platforms[target];
 const prefix=`NYRC-${version}-${platform}-${arch}-${signing}`;
 const root=`src-tauri/target/${target}/release/bundle`;
+const audit=p=>{for(const item of fs.readdirSync(p,{withFileTypes:true})){const file=path.join(p,item.name);if(item.isDirectory())audit(file);else if(item.isFile()){const bytes=fs.readFileSync(file);const text=bytes.toString('latin1');if(/\/Users\/(?:akilan|runner)|\/home\/runner|[A-Z]:\\Users\\(?:runneradmin|akilan)|sk-[A-Za-z0-9]{32,}|AIza[A-Za-z0-9_-]{35}/.test(text))throw Error(`Private path or credential-shaped data in artifact: ${file}`);}}};
+audit(root);
 const out='release-artifacts';fs.mkdirSync(out,{recursive:true});
 const copied=[];
 if(platform==='macOS'){
@@ -24,5 +26,5 @@ if(!copied.length)throw Error('No packaged artifacts');
 const sums=copied.map(file=>`${createHash('sha256').update(fs.readFileSync(file)).digest('hex')}  ${path.basename(file)}`);
 fs.writeFileSync(path.join(out,`${prefix}-SHA256SUMS.txt`),sums.join('\n')+'\n');
 const git=spawnSync('git',['rev-parse','HEAD'],{encoding:'utf8'});if(git.status!==0)throw Error('Cannot determine provenance');
-fs.writeFileSync(path.join(out,`${prefix}-metadata.json`),JSON.stringify({product:'NYRC',version,target,platform,architecture:arch,signing,commit:git.stdout.trim(),artifacts:copied.map(path.basename),note:signing==='unsigned'?'Not trusted publisher signed; macOS may be ad hoc signed.':'Signing requested; consult signing verification evidence.'},null,2)+'\n');
+fs.writeFileSync(path.join(out,`${prefix}-metadata.json`),JSON.stringify({product:'NYRC',version,target,platform,architecture:arch,signing,commit:git.stdout.trim(),artifacts:copied.map(file=>path.basename(file)),note:signing==='unsigned'?'Not trusted publisher signed; macOS may be ad hoc signed.':'Signing requested; consult signing verification evidence.'},null,2)+'\n');
 console.log(sums.join('\n'));

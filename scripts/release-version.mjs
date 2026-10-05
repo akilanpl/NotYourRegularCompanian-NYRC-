@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-const read=p=>fs.readFileSync(p,'utf8');
+const read=p=>fs.readFileSync(p,'utf8').replace(/\r\n/g,'\n');
 const pkg=JSON.parse(read('package.json'));const version=pkg.version;
 if(!/^\d+\.\d+\.\d+(?:-rc\.\d+)?$/.test(version))throw Error('Invalid release version');
 const config=JSON.parse(read('src-tauri/tauri.conf.json'));const lock=JSON.parse(read('package-lock.json'));

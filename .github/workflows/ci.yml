@@ -21,6 +21,7 @@ jobs:
       - run: npm run audit:identity
       - run: npm run check
       - run: npm test
+      - run: node --test scripts/release.test.mjs
       - run: npm run build
       - run: npm audit --audit-level=high
       - run: git diff --exit-code

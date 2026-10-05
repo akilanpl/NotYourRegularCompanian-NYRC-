@@ -1,6 +1,10 @@
 name: Native packages
 on:
   workflow_call:
+    inputs:
+      signing:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -36,9 +40,55 @@ jobs:
       - run: npm ci
       - run: npm run version:check
       - run: cargo test --lib --locked --manifest-path src-tauri/Cargo.toml
-      - name: Package unsigned release candidate
-        run: npm run tauri:build -- --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
-      - run: npm run release:artifacts -- ${{ matrix.target }} unsigned
+      - name: Import Windows signing certificate
+        if: inputs.signing && runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE -or -not $env:WINDOWS_CERTIFICATE_PASSWORD) { throw 'Windows signing secrets are required' }
+          $certPath = Join-Path $env:RUNNER_TEMP 'nyrc-signing.pfx'
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          try {
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = 'http://timestamp.digicert.com' } } } | ConvertTo-Json -Depth 5 | Set-Content 'signing-config.json'
+          } finally { Remove-Item $certPath -Force }
+      - name: Package candidate
+        env:
+          SIGNING_REQUESTED: ${{ inputs.signing }}
+          APPLE_CERTIFICATE: ${{ inputs.signing && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ inputs.signing && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ inputs.signing && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ inputs.signing && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
+        run: |
+          args=(--ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }})
+          if [[ "$SIGNING_REQUESTED" == true && "$RUNNER_OS" == macOS ]]; then
+            test -n "$APPLE_CERTIFICATE" && test -n "$APPLE_CERTIFICATE_PASSWORD" && test -n "$APPLE_SIGNING_IDENTITY" && test -n "$APPLE_ID" && test -n "$APPLE_PASSWORD" && test -n "$APPLE_TEAM_ID" || { echo 'Apple signing and notarization secrets are required'; exit 1; }
+          fi
+          if [[ "$SIGNING_REQUESTED" == true && "$RUNNER_OS" == Windows ]]; then args+=(--config signing-config.json); fi
+          npm run tauri:build -- "${args[@]}" -- --locked
+      - name: Verify requested macOS signature and notarization
+        if: inputs.signing && runner.os == 'macOS'
+        run: |
+          codesign --verify --deep --strict src-tauri/target/${{ matrix.target }}/release/bundle/macos/NYRC.app
+          xcrun stapler validate src-tauri/target/${{ matrix.target }}/release/bundle/macos/NYRC.app
+          spctl --assess --type execute src-tauri/target/${{ matrix.target }}/release/bundle/macos/NYRC.app
+      - name: Verify requested Windows signature
+        if: inputs.signing && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem 'src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*.exe' | ForEach-Object { if ((Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid') { throw 'Invalid installer signature' } }
+      - name: Checksums and provenance
+        env:
+          SIGNING_REQUESTED: ${{ inputs.signing }}
+        run: |
+          label=unsigned
+          if [[ "$SIGNING_REQUESTED" == true && "$RUNNER_OS" != Linux ]]; then label=signed; fi
+          npm run release:artifacts -- ${{ matrix.target }} "$label"
       - uses: actions/upload-artifact@v4
         with:
           name: NYRC-${{ matrix.target }}-unsigned

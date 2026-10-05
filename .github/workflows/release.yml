@@ -4,6 +4,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      signing:
+        description: Use configured Apple and Windows signing secrets
+        type: boolean
+        default: false
       publish:
         description: 'Create a draft release for the selected version tag (never publish automatically)'
         type: boolean
@@ -21,6 +25,9 @@ jobs:
   native:
     needs: validate
     uses: ./.github/workflows/native-build.yml
+    with:
+      signing: ${{ github.event_name == 'workflow_dispatch' && inputs.signing || false }}
+    secrets: inherit
   draft:
     if: github.event_name == 'workflow_dispatch' && inputs.publish && startsWith(github.ref, 'refs/tags/')
     needs: native
