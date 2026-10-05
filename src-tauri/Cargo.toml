@@ -1,11 +1,11 @@
 [package]
 name = "nyrc"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 description = "NYRC — Not Your Regular Companion. A local-first intelligent personal companion."
 authors = ["NYRC Contributors"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.89"
 
 [lib]
 name = "nyrc_lib"

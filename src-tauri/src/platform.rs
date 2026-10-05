@@ -98,7 +98,7 @@ pub fn get_platform_capabilities(state: tauri::State<'_, AppState>) -> Vec<Capab
 }
 #[tauri::command]
 pub fn get_diagnostics(state: tauri::State<'_, AppState>) -> serde_json::Value {
-    serde_json::json!({"product":"NYRC","platform":std::env::consts::OS,"storagePath":state.pet_home,"database":"nyrc.db","schemaVersion":crate::db::SCHEMA_VERSION,"authority":crate::authority::diagnostics(),"capabilities":get_platform_capabilities(state)})
+    serde_json::json!({"product":"NYRC","version":env!("CARGO_PKG_VERSION"),"channel":if cfg!(debug_assertions) {"development"} else if env!("CARGO_PKG_VERSION").contains("-rc.") {"release-candidate"} else {"stable"},"signing":"not verified by runtime","platform":std::env::consts::OS,"storagePath":state.pet_home,"database":"nyrc.db","schemaVersion":crate::db::SCHEMA_VERSION,"authority":crate::authority::diagnostics(),"capabilities":get_platform_capabilities(state)})
 }
 #[cfg(test)]
 mod tests {

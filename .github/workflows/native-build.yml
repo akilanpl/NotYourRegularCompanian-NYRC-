@@ -1,0 +1,47 @@
+name: Native packages
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: macOS ARM64, os: macos-15, target: aarch64-apple-darwin, bundles: app }
+          - { name: macOS Intel, os: macos-15-intel, target: x86_64-apple-darwin, bundles: app }
+          - { name: Windows x64, os: windows-2022, target: x86_64-pc-windows-msvc, bundles: nsis }
+          - { name: Linux x64, os: ubuntu-24.04, target: x86_64-unknown-linux-gnu, bundles: deb }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm }
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev build-essential pkg-config patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: 'src-tauri -> target' }
+      - run: npm ci
+      - run: npm run version:check
+      - run: cargo test --lib --locked --manifest-path src-tauri/Cargo.toml
+      - name: Package unsigned release candidate
+        run: npm run tauri:build -- --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - run: npm run release:artifacts -- ${{ matrix.target }} unsigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NYRC-${{ matrix.target }}-unsigned
+          path: release-artifacts/*
+          if-no-files-found: error
+          retention-days: 30

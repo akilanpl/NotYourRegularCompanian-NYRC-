@@ -1,7 +1,7 @@
 {
   "name": "nyrc",
   "private": true,
-  "version": "0.2.0",
+  "version": "1.0.0-rc.1",
   "type": "module",
   "description": "NYRC \u2014 Not Your Regular Companion. A local-first intelligent personal companion.",
   "scripts": {
@@ -13,7 +13,11 @@
     "test:watch": "vitest",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "node scripts/build-release.mjs",
+    "version:check": "node scripts/release-version.mjs",
+    "version:sync": "node scripts/release-version.mjs --sync",
+    "audit:identity": "node scripts/identity-audit.mjs",
+    "release:artifacts": "node scripts/release-artifacts.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.0",

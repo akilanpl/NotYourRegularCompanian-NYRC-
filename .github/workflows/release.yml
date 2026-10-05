@@ -1,0 +1,42 @@
+name: Release candidate artifacts
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create a draft release for the selected version tag (never publish automatically)'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm run version:check
+  native:
+    needs: validate
+    uses: ./.github/workflows/native-build.yml
+  draft:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && startsWith(github.ref, 'refs/tags/')
+    needs: native
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts, merge-multiple: true }
+      - name: Create reviewable draft only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          args=(--draft --title "NYRC $RELEASE_TAG" --notes "Unsigned candidate packages. Review checksums, platform acceptance and signing status before publication.")
+          if [[ "$RELEASE_TAG" == *-rc.* ]]; then args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" artifacts/* "${args[@]}"

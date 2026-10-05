@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { version } from "../../../package.json";
+  const releaseChannel = import.meta.env.DEV ? "Development" : version.includes("-rc.") ? "Release candidate" : "Stable";
   import SavedSetups from "./SavedSetups.svelte";
   import PocketTray from "./PocketTray.svelte";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -390,7 +392,7 @@
         </details>
       {:else}<h1>NYRC</h1>
         <p>Not Your Regular Companion</p>
-        <p>Version 0.2.0 · MIT License</p>
+        <p>Version {version} · {releaseChannel} · MIT License</p>
         <p class="muted">
           Settings, memories and Pocket live in your local application data
           folder. Cloud requests use your selected provider. Credentials stay in
@@ -401,7 +403,7 @@
             onclick={() => {
               void invoke<{ license: string; notices: string }>(
                 "get_product_notices",
-              ).then((v) => (notices = v));
+              ).then((v) => (notices = v)).catch(() => { notices = {license:"License unavailable. See bundled Resources.",notices:"Third-party notices unavailable."}; });
             }}>License & third-party notices</summary
           >
           <p>

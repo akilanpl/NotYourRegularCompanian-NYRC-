@@ -24,7 +24,7 @@ export default defineConfig({
   build: {
     target: "es2022",
     minify: "esbuild",
-    sourcemap: true,
+    sourcemap: false,
   },
   test: {
     environment: "node",
