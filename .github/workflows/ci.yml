@@ -17,6 +17,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: npm }
       - run: npm ci
+      - uses: taiki-e/install-action@v2
+        with: { tool: 'actionlint@1.7.12' }
+      - run: actionlint -shellcheck= -pyflakes=
       - run: npm run version:check
       - run: npm run audit:identity
       - run: npm run check

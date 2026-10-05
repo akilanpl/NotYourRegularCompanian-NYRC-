@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import {verifyArchitecture} from './release-architecture.mjs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -9,8 +10,12 @@ const version=JSON.parse(fs.readFileSync('package.json')).version;
 const [platform,arch]=platforms[target];
 const prefix=`NYRC-${version}-${platform}-${arch}-${signing}`;
 const root=`src-tauri/target/${target}/release/bundle`;
+const binary=`src-tauri/target/${target}/release/nyrc${platform==='Windows'?'.exe':''}`;
+verifyArchitecture(fs.readFileSync(binary),target);
 const audit=p=>{for(const item of fs.readdirSync(p,{withFileTypes:true})){const file=path.join(p,item.name);if(item.isDirectory())audit(file);else if(item.isFile()){const bytes=fs.readFileSync(file);const text=bytes.toString('latin1');if(/\/Users\/(?:akilan|runner)|\/home\/runner|[A-Z]:\\Users\\(?:runneradmin|akilan)|sk-[A-Za-z0-9]{32,}|AIza[A-Za-z0-9_-]{35}/.test(text))throw Error(`Private path or credential-shaped data in artifact: ${file}`);}}};
 audit(root);
+const binaryText=fs.readFileSync(binary).toString('latin1');
+if(/\/Users\/(?:akilan|runner)|\/home\/runner|[A-Z]:\\Users\\(?:runneradmin|akilan)|sk-[A-Za-z0-9]{32,}|AIza[A-Za-z0-9_-]{35}/.test(binaryText))throw Error('Private path or credential-shaped data in executable');
 const out='release-artifacts';fs.mkdirSync(out,{recursive:true});
 const copied=[];
 if(platform==='macOS'){

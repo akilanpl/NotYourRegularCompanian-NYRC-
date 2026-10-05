@@ -4,6 +4,8 @@ A local-first desktop companion that stays expressive and useful with AI off. **
 
 The unified assistant handles timers, durable reminders, Pocket notes and links, aliases, modes, clipboard and developer events. Optional Ollama, OpenAI-compatible and Gemini providers propose actions through a closed schema. Google Calendar is optional. Sensitive actions require approval; model output cannot authorize itself. The original SVG character responds to mood, gestures and semantic events.
 
+![NYRC release candidate](docs/visual/nyrc-rc-about.png)
+
 ## Install and run
 
 Download a package for your actual architecture from the release/CI artifacts. Verify its SHA-256 against the accompanying SHA256SUMS file. macOS: unzip and copy NYRC.app to Applications. Windows: run the NSIS installer. Debian/Ubuntu: install the .deb with your package manager. Unsigned candidates may trigger OS publisher warnings; macOS builds are not notarized unless the release evidence explicitly says so. See [platform status](docs/PLATFORMS.md) before relying on platform-specific features.

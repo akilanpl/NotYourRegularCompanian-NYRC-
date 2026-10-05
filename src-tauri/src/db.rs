@@ -2304,3 +2304,52 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;let d=tempfile::tempdir().unwrap();let path=d.path().canonicalize().unwrap().join("read-only.db");drop(Db::open(&path).unwrap());std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o400)).unwrap();assert!(Db::open(&path).is_err());assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode()&0o777,0o400);
     }
 }
+
+#[cfg(test)]
+mod release_acceptance_tests {
+    use super::*;
+    #[test]
+    fn pre_v1_upgrade_reinstall_and_clock_jump_preserve_user_data() {
+        let tmp = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
+        let path = tmp.path().join("upgrade.db");
+        let db = Db::open(&path).unwrap();
+        let mut pet = PetState::new("Upgrade Companion");
+        pet.id = "default".into();
+        db.save_pet_state(&pet).unwrap();
+        db.put_setting("settings:v1", r#"{"petName":"Upgrade Companion","localOnlyMode":true,"providerKind":"openai","cloudApiKeySet":false}"#).unwrap();
+        db.put_setting("storage:migration:v1", "retained-marker").unwrap();
+        db.put_setting("calendar:v1", r#"{"enabled":false,"clientId":"public-reference","calendarId":"fixture"}"#).unwrap();
+        db.create_user_alias(NewUserAlias { phrase:"fixture docs".into(), target_type:"website".into(), target:"https://example.com".into() }).unwrap();
+        db.create_assistant_mode(NewAssistantMode { name:"Fixture".into(), actions:vec![serde_json::json!({"id":"time.now","payload":{}})] }).unwrap();
+        crate::commands::save_pocket(&db,"text","Upgrade Pocket","preserved".into(),1024).unwrap();
+        let reminder=db.create_scheduled_item(NewScheduledItem {kind:ScheduledItemKind::Reminder,title:"Wake fixture".into(),message:None,scheduled_at:"2026-10-05T10:01:00Z".into(),timezone:None,recurrence:None,metadata:None}).unwrap();
+        fn snapshot(db:&Db)->Vec<String>{
+            let conn=db.conn.lock();
+            ["settings","pocket","user_aliases","assistant_modes"].into_iter().flat_map(|table|{
+                let mut stmt=conn.prepare(&format!("SELECT * FROM {table} ORDER BY 1")).unwrap();
+                let count=stmt.column_count();
+                stmt.query_map([],|row|Ok((0..count).map(|i|format!("{:?}",row.get_ref(i).unwrap())).collect::<Vec<_>>().join("|"))).unwrap().collect::<rusqlite::Result<Vec<_>>>().unwrap()
+            }).collect()
+        }
+        let expected=snapshot(&db);
+        db.conn.lock().execute_batch("ALTER TABLE pet_state DROP COLUMN last_report_at; PRAGMA user_version=0;").unwrap();
+        drop(db);
+        for _ in 0..3 {
+            let reopened=Db::open(&path).unwrap();
+            assert_eq!(snapshot(&reopened),expected);
+            assert_eq!(reopened.load_pet_state("default").unwrap().unwrap().name,"Upgrade Companion");
+            assert_eq!(reopened.list_scheduled_items(None).unwrap().len(),1);
+            assert!(reopened.claim_due_scheduled_items("2026-10-05T10:00:30Z").unwrap().is_empty());
+        }
+        let resumed=Db::open(&path).unwrap();
+        // No timer polls occur across this deadline jump, as during suspension.
+        let claimed=resumed.claim_due_scheduled_items("2026-10-05T10:40:00Z").unwrap();
+        assert_eq!(claimed.len(),1);assert_eq!(claimed[0].id,reminder.id);
+        assert!(resumed.claim_due_scheduled_items("2026-10-05T10:40:01Z").unwrap().is_empty());
+        drop(resumed);
+        let restarted=Db::open(&path).unwrap();
+        assert_eq!(restarted.get_scheduled_item(&reminder.id).unwrap().unwrap().status,ScheduledItemStatus::Triggered);
+        assert!(restarted.claim_due_scheduled_items("2026-10-05T10:41:00Z").unwrap().is_empty());
+        assert_eq!(snapshot(&restarted),expected);
+    }
+}
