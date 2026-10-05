@@ -21,7 +21,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      - run: npm ci
       - run: npm run version:check
+      - run: npm run audit:identity
+      - run: npm run check
+      - run: npm test
+      - run: node --test scripts/release.test.mjs
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - uses: taiki-e/install-action@v2
+        with: { tool: 'cargo-audit@0.22.2' }
+      - run: cargo audit --file src-tauri/Cargo.lock --json > cargo-audit.json
+      - run: node scripts/security-audit.mjs cargo-audit.json
   native:
     needs: validate
     uses: ./.github/workflows/native-build.yml

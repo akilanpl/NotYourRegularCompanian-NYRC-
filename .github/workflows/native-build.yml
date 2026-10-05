@@ -65,6 +65,7 @@ jobs:
           APPLE_PASSWORD: ${{ inputs.signing && secrets.APPLE_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ inputs.signing && secrets.APPLE_TEAM_ID || '' }}
         run: |
+          if [[ "$SIGNING_REQUESTED" != true ]]; then unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; fi
           args=(--ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }})
           if [[ "$SIGNING_REQUESTED" == true && "$RUNNER_OS" == macOS ]]; then
             test -n "$APPLE_CERTIFICATE" && test -n "$APPLE_CERTIFICATE_PASSWORD" && test -n "$APPLE_SIGNING_IDENTITY" && test -n "$APPLE_ID" && test -n "$APPLE_PASSWORD" && test -n "$APPLE_TEAM_ID" || { echo 'Apple signing and notarization secrets are required'; exit 1; }
