@@ -15,7 +15,8 @@ Validation on macOS:
   real loopback pairing/ACK/dedup/reconnect/oversize and fragmented-frame
   cancellation; platform contracts and existing provider/service regressions.
 - Frontend production build and cargo build passed.
-- Debug and optimized release macOS .app bundles built successfully.
+- Debug and optimized release macOS .app bundles built successfully. The release
+  bundle includes LICENSE and THIRD_PARTY_NOTICES.md resources.
 - git diff --check passed.
 
 Native CUA smoke: NYRC app/menu/settings identity; time; short timer firing;
