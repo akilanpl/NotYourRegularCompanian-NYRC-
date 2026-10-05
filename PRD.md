@@ -1458,10 +1458,10 @@ focus, and never fire while the user is dragging the window.
 
 **REQ-121:** Multi-monitor roaming: occasionally (seeded, ≤ ~1 crossing per
 10 idle minutes, curious/bored moods only) the pet walks off one monitor's
-edge and re-enters on the adjacent monitor. *Known limitation:* adjacency is
-computed in per-monitor logical space, so crossings are disabled on
-mixed-DPI setups where per-monitor scale factors differ (the no-op is
-silent and safe); tracked in BACKLOG for a single-space rewrite.
+edge and re-enters on the adjacent monitor. Adjacency and overlap are
+compared in physical desktop space; the landing position is converted into
+the target monitor’s logical scale before the bridge applies it. Mixed-DPI
+fixtures cover both crossing directions, y clamping and real physical gaps.
 
 **REQ-122:** Opt-in critical-need desktop notifications per the §27.2
 amendment above. Pure gate in `sim/notifications.ts` (kind, zero-guilt copy

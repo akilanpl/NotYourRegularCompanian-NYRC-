@@ -7,7 +7,7 @@ Prompt 5 completes the unsigned release-candidate engineering scope. Stable publ
 | Area | Result | Evidence / practical limit |
 |---|---|---|
 | Version, About, diagnostics | PASS | npm/Tauri/Cargo/lockfiles agree; native About says 1.0.0-rc.1 / Release candidate |
-| Frontend quality | PASS | 448 tests / 41 files; Svelte 0 errors, 0 warnings; production build |
+| Frontend quality | PASS | 452 tests / 41 files; Svelte 0 errors, 0 warnings; production build |
 | Rust and security regressions | PASS | 143 macOS tests, including full pre-v1 fixture upgrade/reopen/deadline jump; locked build |
 | Release tooling | PASS | Four Node release tests; actionlint 1.7.12; version drift/tag/CRLF and architecture mismatch fail closed |
 | Clean macOS build | PASS | Fresh clone, npm ci, fresh Cargo target, tests and ARM64 App bundle; no copied node_modules/dist/target |
@@ -29,7 +29,7 @@ Prompt 5 completes the unsigned release-candidate engineering scope. Stable publ
 
 ## CI and source provenance
 
-[Four-target CI run](https://github.com/akilanpl/NotYourRegularCompanian-NYRC-/actions/runs/37326151336) exercises the shared native workflow at `d786209d003186418b04eed35439cf11dd60b2d0`. Each target passed its tests, packaging, checksum generation and upload. Final PR-head checks must also be green before merge; use the PR checks and artifact metadata as the authority for its exact head SHA. Later release-tooling tests and this report do not change runtime code.
+[Four-target CI run](https://github.com/akilanpl/NotYourRegularCompanian-NYRC-/actions/runs/37326151336) exercises the shared native workflow at `d786209d003186418b04eed35439cf11dd60b2d0`. Each target passed its tests, packaging, checksum generation and upload. Final PR-head checks must also be green before merge; use the PR checks and artifact metadata as the authority for its exact head SHA. The final head additionally fixes mixed-DPI adjacency with four regression cases; final-head CI/artifacts are the authority for that correction.
 
 Native tests vary by OS because Unix-specific jail/permission tests are cfg-gated. The final local suite is 143 tests; the CI artifact-producing run predates the additional upgrade/deadline-jump regression by one test. This is disclosed instead of inventing equal test totals on all platforms.
 
@@ -72,6 +72,8 @@ Actual machine sleep was not forced. A targeted simulated process suspension was
 All existing Prompt 4 security tests were rerun: no-follow jail, migration failure safety, SQLite contention/claim races, TaskManager approval/cancellation, provider generations/redaction/response bounds, bounded queues and Body fuzz/timeout cleanup. Memory export and Calendar configure/disconnect now also pass native confirmation. In the final app, Enter denied memory export; explicit Allow once wrote JSON inside the fixture exports directory; Escape canceled Calendar disconnect.
 
 npm audit reports zero vulnerabilities. cargo-audit reports zero vulnerabilities and visible informational warnings. glib 0.18.5 / RUSTSEC-2024-0429 remains a reviewed unsound Linux transitive API: all 586 locked packages were source-scanned, finding no callers of VariantStrIter/array_iter_str outside glib itself. Only this exact advisory/package/version is permitted; new vulnerabilities or soundness warnings fail. See DEPENDENCY-SECURITY.md for the chain and fixed-version constraints. Maintenance notices are retained, not erased.
+
+The final documentation audit found and fixed the historical mixed-DPI roaming defect: adjacency/overlap now use physical coordinates, with target-scale landing conversion. Four cases failed before the fix and pass afterward. Real mixed-DPI desktop acceptance requires additional monitor hardware.
 
 Active source/product metadata is NYRC. Historical donor references remain only in isolated migration compatibility and legal attribution; the remote repository's historical spelling remains unchanged. Frontend source maps are disabled. Release builds remap source/home paths; scanners inspect packages and the raw executable for private paths/credential-shaped data. Artifact names are additionally checked against Mach-O/PE/ELF executable headers. LICENSE and THIRD_PARTY_NOTICES exist in the package and were readable from About.
 
