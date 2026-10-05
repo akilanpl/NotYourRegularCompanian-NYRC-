@@ -17,9 +17,14 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '22', cache: npm }
       - run: npm ci
-      - uses: taiki-e/install-action@v2
-        with: { tool: 'actionlint@1.7.12' }
-      - run: actionlint -shellcheck= -pyflakes=
+      - name: Validate workflow syntax
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/nyrc-actionlint"
+          gh release download v1.7.12 --repo rhysd/actionlint --pattern actionlint_1.7.12_linux_amd64.tar.gz --pattern actionlint_1.7.12_checksums.txt --dir "$RUNNER_TEMP/nyrc-actionlint"
+          (cd "$RUNNER_TEMP/nyrc-actionlint" && sha256sum --check --ignore-missing actionlint_1.7.12_checksums.txt && tar -xzf actionlint_1.7.12_linux_amd64.tar.gz)
+          "$RUNNER_TEMP/nyrc-actionlint/actionlint" -shellcheck= -pyflakes=
       - run: npm run version:check
       - run: npm run audit:identity
       - run: npm run check

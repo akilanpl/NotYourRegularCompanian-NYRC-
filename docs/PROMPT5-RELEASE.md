@@ -6,7 +6,7 @@ Prompt 5 completes the unsigned release-candidate engineering scope. Stable publ
 
 | Area | Result | Evidence / practical limit |
 |---|---|---|
-| Version, About, diagnostics | PASS | npm/Tauri/Cargo/lockfiles agree; native About says 1.0.0-rc.1 / Release candidate |
+| Version, About, diagnostics | PASS | npm/Tauri/Cargo/lockfiles agree; Apple numeric short version/candidate build are derived and checked; native About says 1.0.0-rc.1 / Release candidate |
 | Frontend quality | PASS | 452 tests / 41 files; Svelte 0 errors, 0 warnings; production build |
 | Rust and security regressions | PASS | 143 macOS tests, including full pre-v1 fixture upgrade/reopen/deadline jump; locked build |
 | Release tooling | PASS | Four Node release tests; actionlint 1.7.12; version drift/tag/CRLF and architecture mismatch fail closed |
@@ -86,6 +86,8 @@ Active source/product metadata is NYRC. Historical donor references remain only 
 Packages are named `NYRC-1.0.0-rc.1-macOS-arm64-unsigned.zip`, `NYRC-1.0.0-rc.1-macOS-x64-unsigned.zip`, `NYRC-1.0.0-rc.1-Windows-x64-unsigned.exe`, and `NYRC-1.0.0-rc.1-Linux-x64-unsigned.deb`. Per-target metadata gives exact source SHA, target and signing state. SHA256SUMS accompanies each download; all downloaded package checksums are verified locally. The independently clean-built local ARM64 ZIP has SHA256 `87a00695698b129aaef2e189a048ce3838583707675084e88e1ff5962939968f` and source `522e2d2`. It is distinct from CI's build and has its own manifest.
 
 No artifact is claimed trusted signed or notarized. Local macOS signature is linker/ad hoc, has no TeamIdentifier, and supplies no Gatekeeper notarization ticket. Optional Apple and Windows signing paths require real encrypted secrets and verification; they are documented but not exercised with fabricated credentials. Unsigned CI secrets must be unset, not empty strings: Tauri interprets present empty certificate variables as a signing request. This was reproduced and fixed.
+
+Apple packaging normalizes CFBundleShortVersionString to 1.0.0 and CFBundleVersion to 1.0.0fc1 while retaining canonical NYRCReleaseVersion 1.0.0-rc.1. The version guard checks the mapping, avoiding an invalid prerelease string in Apple’s numeric short-version field.
 
 Release workflow syntax passes actionlint. It runs quality/security/native validation, builds only selected actual targets, retains checksums/provenance and can only create a deliberately requested draft release on a version tag. An attempted `publish=false, signing=false` dispatch received GitHub 404 because release.yml is not on main. No merge or fake tag was used to bypass that restriction. After an approved merge, run the documented unsigned dry run, then configure environment approval/signing before trusted publication.
 

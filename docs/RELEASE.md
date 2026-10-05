@@ -2,7 +2,7 @@
 
 ## Version and validation
 
-`package.json` is canonical. Edit its version, run `npm run version:sync`, and commit all five metadata/lockfile changes. `npm run version:check` checks npm package/root lock, Tauri, Cargo package and Cargo lock versions. A tag must be `v<version>`. About and diagnostics use the same package version. RC is not Stable.
+`package.json` is canonical. Edit its version, run `npm run version:sync`, and commit all generated metadata/lockfile changes. `npm run version:check` checks npm package/root lock, Tauri, Cargo package and Cargo lock versions. A tag must be `v<version>`. About and diagnostics use the same package version. RC is not Stable. Apple requires a numeric short version, so the generated Info.release.plist uses 1.0.0, bundleVersion uses 1.0.0fc1 and NYRCReleaseVersion retains 1.0.0-rc.1. version:check verifies this derived mapping. See [Apple bundle version rules](https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html).
 
 Run `npm ci`, `npm run check`, `npm test`, `node --test scripts/release.test.mjs`, `npm run build`, `cargo test --lib --locked --manifest-path src-tauri/Cargo.toml`, `cargo build --locked --manifest-path src-tauri/Cargo.toml`, identity/security audits and native acceptance. Use a clean clone without copied node_modules, dist or target. A dependency cache is allowed; an existing build directory is not clean-build evidence.
 

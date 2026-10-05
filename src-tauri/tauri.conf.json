@@ -29,7 +29,7 @@
       },
       {
         "label": "settings",
-        "title": "NYRC \u2014 Settings",
+        "title": "NYRC — Settings",
         "url": "index.html#/settings",
         "width": 520,
         "height": 640,
@@ -55,11 +55,15 @@
       "icons/icon.ico"
     ],
     "category": "Entertainment",
-    "shortDescription": "NYRC \u2014 local-first intelligent personal companion",
+    "shortDescription": "NYRC — local-first intelligent personal companion",
     "longDescription": "NYRC is a local-first intelligent personal companion designed to remain useful, expressive, and alive even without cloud AI.",
     "resources": {
       "../LICENSE": "LICENSE",
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
+    },
+    "macOS": {
+      "infoPlist": "Info.release.plist",
+      "bundleVersion": "1.0.0fc1"
     }
   },
   "plugins": {}
