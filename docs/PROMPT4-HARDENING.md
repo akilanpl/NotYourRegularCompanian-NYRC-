@@ -61,7 +61,7 @@ Final command results and native findings are recorded below before delivery. Re
 
 ### Native acceptance evidence
 
-CUA-assisted optimized app launches restored onboarding-complete state, companion name, local settings and saved Pocket content without a stale startup screen. Final executable/frontend were also tested using an ad-hoc-signed copy with a unique **OS bundle identifier/name only**, to distinguish multiple LaunchServices registrations; embedded NYRC runtime identifier and executable/frontend bits remain those of the production build. At least two quit/relaunch cycles of the exact final executable/frontend passed.
+CUA-assisted optimized app launches restored onboarding-complete state, companion name, local settings and saved Pocket content without a stale startup screen. Final executable/frontend were also tested using an ad-hoc-signed copy with a unique **OS bundle identifier/name**, to distinguish multiple LaunchServices registrations. Bundle metadata and the ad-hoc code signature differ; all **29 Mach-O payload sections** match the production executable, including its embedded frontend/runtime identifier. At least two quit/relaunch cycles of the exact final executable/frontend passed.
 
 - Keyboard command submission, local “25 minute timer”, timer running at quit, subsequent keyboard command without clicking, permission heading Enter doing nothing, native sheet Enter choosing Deny, native Escape cancel, explicit native Allow once, and input focus after native denial passed.
 - Closing the assistant cancels its pending request; reopening shows **Cancelled** with no stale permission dialog.
