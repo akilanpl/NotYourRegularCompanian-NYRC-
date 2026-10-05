@@ -45,9 +45,9 @@
   function fillColor(b: Bar): string {
     // All gauges are "high = good" now, so the colour logic is uniform.
     const pct = Math.max(0, Math.min(100, b.value));
-    if (pct < 25) return "var(--mochi-bar-danger, #e57373)";
-    if (pct < 45) return "var(--mochi-bar-warn,   #f5b955)";
-    return "var(--mochi-bar-ok, #6dc28a)";
+    if (pct < 25) return "var(--nyrc-bar-danger, #e57373)";
+    if (pct < 45) return "var(--nyrc-bar-warn,   #f5b955)";
+    return "var(--nyrc-bar-ok, #6dc28a)";
   }
 </script>
 
@@ -124,7 +124,7 @@
     border-radius: 16px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
     font-size: 11px;
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     pointer-events: auto;
     /* Stays within the viewport even on the small 360×360 overlay. */
     max-width: calc(100vw - 16px);
@@ -229,7 +229,7 @@
     background: rgba(255, 220, 232, 0.55);
     font-size: 17px;
     line-height: 1;
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     opacity: 0.85;
     cursor: pointer;
     transition: opacity 0.15s ease, background 0.15s ease;
@@ -249,7 +249,7 @@
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
     font-size: 11px;
     font-weight: 600;
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     cursor: pointer;
     pointer-events: auto;
     transition: transform 0.08s ease, background 0.15s ease;

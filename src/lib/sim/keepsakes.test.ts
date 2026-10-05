@@ -86,8 +86,8 @@ describe("REQ-109 memory payload and restore", () => {
 
   it("bubble names the pet and shows the trinket", () => {
     const t = TRINKETS[1];
-    const b = keepsakeBubble("Mochi", t);
-    expect(b).toContain("Mochi");
+    const b = keepsakeBubble("NYRC", t);
+    expect(b).toContain("NYRC");
     expect(b).toContain(t.icon);
   });
 

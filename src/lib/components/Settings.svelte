@@ -1,4 +1,5 @@
 <script lang="ts">
+  import BodyDiagnostics from "./BodyDiagnostics.svelte";
   import { onMount } from "svelte";
   import {
     api,
@@ -587,6 +588,7 @@
     {#if activeTab === "developer"}
       <!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
       <section id="panel-developer" role="tabpanel" aria-labelledby="tab-developer">
+        <BodyDiagnostics />
         {#if !settings.developerEventLog}
           <p class="hint">
             The developer event log is disabled. Enable “Developer event log” in
@@ -634,7 +636,7 @@
     padding: 16px 20px;
     max-width: 720px;
     margin: 0 auto;
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
   }
   header {
     display: flex;
@@ -652,12 +654,12 @@
   }
   nav button {
     background: transparent;
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
     padding: 4px 10px;
     border-radius: 8px;
   }
   nav button.active {
-    background: var(--mochi-pink);
+    background: var(--nyrc-pink);
   }
   section {
     background: white;
@@ -736,7 +738,7 @@
     overflow-y: auto;
   }
   .keepsake-shelf li {
-    background: linear-gradient(180deg, #fff4e8, var(--mochi-cream));
+    background: linear-gradient(180deg, #fff4e8, var(--nyrc-cream));
     border: 1px dashed #ecd7c2;
     border-radius: 10px;
     padding: 8px 10px;
@@ -754,7 +756,7 @@
   }
   .memory-list li,
   .inbox-list li {
-    background: var(--mochi-cream);
+    background: var(--nyrc-cream);
     border-radius: 10px;
     padding: 10px 12px;
     display: flex;
@@ -767,7 +769,7 @@
     justify-content: space-between;
   }
   .tag {
-    background: var(--mochi-pink);
+    background: var(--nyrc-pink);
     border-radius: 999px;
     padding: 2px 8px;
     font-size: 11px;
@@ -807,7 +809,7 @@
     overflow-y: auto;
   }
   .approved-summary {
-    background: var(--mochi-cream);
+    background: var(--nyrc-cream);
     border-radius: 10px;
     padding: 10px 12px;
     display: flex;
@@ -830,7 +832,7 @@
     overflow-y: auto;
   }
   .report-list li {
-    background: var(--mochi-cream);
+    background: var(--nyrc-cream);
     border-radius: 10px;
     padding: 10px 12px;
     display: flex;

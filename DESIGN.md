@@ -15,7 +15,7 @@ packaged installers, or unshipped features.
 
 ## Visual World — "The Device"
 
-The landing is the toy itself. An oversized, working Mochi device sits at the
+The landing is the toy itself. An oversized, working NYRC device sits at the
 hero's center running a faithful port of `src/lib/sim` (decay, mood,
 movement, action beats — real constants, thresholds, bubbles). The page is
 the app's own visual system scaled up, not a new one.
@@ -27,11 +27,11 @@ the app's own visual system scaled up, not a new one.
 | Page ground | `linear-gradient(160deg, #fffdf7, #fff1e0)` | app stage "cream" |
 | Device screen | `linear-gradient(160deg, #fff5f8, #ffdfeb)` | app stage "blossom" |
 | Sandbox panel | `linear-gradient(160deg, #2c2440, #1c1730)` | app stage "night" |
-| Ink / secondary | `#3a2b34` / `#6a5560` / `#95808c` | app `--mochi-text` family |
+| Ink / secondary | `#3a2b34` / `#6a5560` / `#95808c` | app `--nyrc-text` family |
 | Accent | `#ff7aa1` (fills) · `#b34a6e` (text-safe 4.6:1 on cream) | app accent |
 | Stat bars | `#6dc28a` / `#f5b955` / `#e57373` at <25 / <45 thresholds | `PetStatus.svelte` |
 | Mood tints | happy `#ffe3ea` · curious `#fff1d6` · tired `#e8dcea` · hungry `#ffe0cc` · bored `#e2e8ee` · lonely `#d9d2ea` | `ChatBubble.svelte` |
-| Mood sprite filters | hue-rotate/saturate per mood | `MochiSprite.svelte` `MOOD_FILTER` |
+| Mood sprite filters | hue-rotate/saturate per mood | `SpriteRenderer.svelte` `MOOD_FILTER` |
 | Radius | 16px cards · 40px device shell · 24px screen · 12px pose cells | app 18px card language, scaled |
 | Shadows | offset + soft blur only (no zero-offset halos, no hard offset blocks) | craft floor |
 
@@ -77,7 +77,7 @@ animations.
 ## i18n
 
 EN/KO in one file. `navigator.languages` auto-detect → `ko` when any Korean
-locale leads; manual `한국어/EN` toggle persists to `localStorage.mochi-lang`
+locale leads; manual `한국어/EN` toggle persists to `localStorage.companion-lang`
 (auto-detect never persists). EN is snapshotted from the DOM at boot; KO
 lives in the `KO` dictionary keyed by `data-i18n` / `data-i18n-attr`.
 Runtime strings (bubbles, mood words, pose labels, report, alts) localize

@@ -7,20 +7,23 @@ const ALLOWED_EXTS: &[&str] = &["txt", "md", "json"];
 
 /// Resolves and validates the pet's home folder. Creates the standard subdirectories.
 pub fn ensure_pet_home(root: &Path) -> AppResult<PathBuf> {
+    validate_storage_path(root)?;
     std::fs::create_dir_all(root)?;
+    secure_storage_directory(root)?;
     for sub in ["inbox", "notes", "dreams", "exports"] {
+        validate_storage_path(&root.join(sub))?;
         std::fs::create_dir_all(root.join(sub))?;
     }
     Ok(root.to_path_buf())
 }
 
-/// Default pet home location: <data_dir>/pet-mochi
+/// Default pet home location: <data_dir>/nyrc
 pub fn default_pet_home() -> AppResult<PathBuf> {
     let base = dirs::data_local_dir()
         .or_else(dirs::data_dir)
         .or_else(dirs::home_dir)
         .ok_or_else(|| AppError::Internal("could not resolve user data dir".into()))?;
-    Ok(base.join("pet-mochi"))
+    Ok(base.join("nyrc"))
 }
 
 /// Validate an extension against the safelist.
@@ -347,7 +350,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn home() -> (TempDir, PathBuf) {
-        let dir = TempDir::new().unwrap();
+        let dir = TempDir::new_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let p = ensure_pet_home(dir.path()).unwrap();
         (dir, p)
     }
@@ -526,7 +529,7 @@ mod pocket_file_tests {
     use super::*;
     #[test]
     fn binary_file_round_trip_and_limits() {
-        let d = tempfile::tempdir().unwrap();
+        let d = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         ensure_pet_home(d.path()).unwrap();
         let bytes = vec![0, 255, 1, 254];
         std::fs::write(d.path().join("inbox/test.bin"), &bytes).unwrap();
@@ -545,10 +548,52 @@ mod pocket_file_tests {
     #[test]
     fn binary_symlink_rejected() {
         use std::os::unix::fs::symlink;
-        let d = tempfile::tempdir().unwrap();
+        let d = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         ensure_pet_home(d.path()).unwrap();
         std::fs::write(d.path().join("outside"), "secret").unwrap();
         symlink(d.path().join("outside"), d.path().join("inbox/link.bin")).unwrap();
         assert!(read_pocket_file(d.path(), "link.bin", 1024).is_err());
     }
+}
+
+/// Storage roots and migration trees reject symlinks in every existing component.
+pub fn validate_storage_path(path: &Path) -> AppResult<()> {
+    if !path.is_absolute() || path.components().any(|c|matches!(c,std::path::Component::ParentDir)) {return Err(AppError::Permission("Storage path must be absolute without traversal".into()));}
+    let mut prefix=PathBuf::new();
+    for part in path.components() {prefix.push(part);if let Ok(m)=std::fs::symlink_metadata(&prefix) {if m.file_type().is_symlink() {return Err(AppError::Permission("Storage symlink refused".into()));}}}
+    Ok(())
+}
+pub fn validate_storage_tree(path: &Path) -> AppResult<()> {
+    validate_storage_path(path)?;
+    let m=std::fs::symlink_metadata(path)?;
+    if m.is_dir() {for e in std::fs::read_dir(path)? {validate_storage_tree(&e?.path())?;}}
+    else if !m.is_file() {return Err(AppError::Permission("Special storage file refused".into()));}
+    Ok(())
+}
+pub fn copy_storage_contents(source: &Path,destination: &Path,skip: &[&str]) -> AppResult<()> {
+    validate_storage_tree(source)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry=entry?;let name=entry.file_name();if skip.iter().any(|s|name==*s) {continue;}
+        let target=destination.join(&name);let meta=entry.metadata()?;
+        if meta.is_dir() {std::fs::create_dir(&target)?;copy_storage_contents(&entry.path(),&target,&[])?;}
+        else {let mut input=open_no_follow(&entry.path())?;
+            #[cfg(unix)] {use std::os::unix::fs::MetadataExt;let opened=input.metadata()?;if opened.dev()!=meta.dev()||opened.ino()!=meta.ino(){return Err(AppError::Permission("Storage file changed during migration".into()));}}
+            let mut output=std::fs::OpenOptions::new().write(true).create_new(true).open(target)?;std::io::copy(&mut input,&mut output)?;output.sync_all()?;}
+    }
+    Ok(())
+}
+pub fn publish_storage(stage: &Path,destination: &Path) -> AppResult<()> {
+    validate_storage_tree(stage)?;
+    // Reserve the destination exclusively; competing startup attempts cannot overwrite it.
+    std::fs::create_dir(destination)?;
+    secure_storage_directory(destination)?;
+    for entry in std::fs::read_dir(stage)? {let entry=entry?;std::fs::rename(entry.path(),destination.join(entry.file_name()))?;}
+    std::fs::remove_dir(stage)?;
+    Ok(())
+}
+
+/// Keep snapshots and runtime data accessible only to the owner on Unix.
+pub fn secure_storage_directory(path:&Path)->AppResult<()> {
+    #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(path,std::fs::Permissions::from_mode(0o700))?;}
+    Ok(())
 }

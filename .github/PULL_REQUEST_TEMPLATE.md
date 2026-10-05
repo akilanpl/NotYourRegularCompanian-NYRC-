@@ -19,7 +19,7 @@ For a project-wide brief see CONTRIBUTING.md (humans) or AGENTS.md (AI agents).
 - [ ] `npm run check` — 0 errors / 0 warnings
 - [ ] `cd src-tauri && cargo test --lib` — all passing
 - [ ] Manual smoke-test in `npm run tauri:dev` (describe what you observed):
-  <!-- e.g. "Patted Mochi while sleeping → saw yawn → blush → celebrate." -->
+  <!-- e.g. "Patted NYRC while sleeping → saw yawn → blush → celebrate." -->
 
 ## Screenshots / GIF
 

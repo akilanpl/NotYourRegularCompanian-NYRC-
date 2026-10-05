@@ -4,7 +4,6 @@ use crate::error::AppResult;
 use crate::models::{AssistantMode, NewAssistantMode, NewUserAlias, UserAlias};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 use tauri::State;
 
 #[derive(Debug, Clone, Serialize)]
@@ -15,7 +14,7 @@ pub struct DesktopActionError {
 }
 
 impl DesktopActionError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -87,145 +86,17 @@ pub fn delete_mode(state: State<'_, AppState>, id: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn open_website(url: String) -> Result<(), DesktopActionError> {
-    validate_web_url(&url)?;
-    #[cfg(target_os = "macos")]
-    let result = Command::new("/usr/bin/open").arg(&url).status();
-    #[cfg(target_os = "windows")]
-    let result = match std::env::var_os("WINDIR") {
-        Some(windows_dir) => Command::new(
-            std::path::PathBuf::from(windows_dir)
-                .join("System32")
-                .join("rundll32.exe"),
-        )
-        .args(["url.dll,FileProtocolHandler", &url])
-        .status(),
-        None => Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "Windows directory is unavailable",
-        )),
-    };
-    #[cfg(target_os = "linux")]
-    let result = Command::new("/usr/bin/xdg-open").arg(&url).status();
-    match result {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(DesktopActionError::new(
-            "open_failed",
-            "Could not open website",
-        )),
-        Err(error) => Err(DesktopActionError::new("open_failed", error.to_string())),
-    }
-}
-
+pub fn open_website(url:String)->Result<(),DesktopActionError>{crate::platform::desktop::open_website(url)}
 #[tauri::command]
-pub fn open_application(application: String) -> Result<(), DesktopActionError> {
-    let app = validate_application(&application)?;
-    #[cfg(target_os = "macos")]
-    let result = Command::new("/usr/bin/open").args(["-a", app]).status();
-    #[cfg(not(target_os = "macos"))]
-    let result: std::io::Result<std::process::ExitStatus> = Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Application aliases are supported on macOS only",
-    ));
-    match result {
-        Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(DesktopActionError::new(
-            "application_unavailable",
-            "Configured application is unavailable",
-        )),
-        Err(error) => Err(DesktopActionError::new(
-            "application_unavailable",
-            error.to_string(),
-        )),
-    }
-}
-
+pub fn open_application(application:String)->Result<(),DesktopActionError>{crate::platform::desktop::open_application(application)}
 #[tauri::command]
-pub fn get_system_volume() -> Result<u8, DesktopActionError> {
-    #[cfg(target_os = "macos")]
-    {
-        let output = Command::new("/usr/bin/osascript")
-            .args(["-e", "output volume of (get volume settings)"])
-            .output()
-            .map_err(|error| DesktopActionError::new("volume_unavailable", error.to_string()))?;
-        if !output.status.success() {
-            return Err(DesktopActionError::new(
-                "volume_unavailable",
-                "Could not read system volume",
-            ));
-        }
-        let value = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u8>()
-            .map_err(|_| {
-                DesktopActionError::new("volume_unavailable", "System returned an invalid volume")
-            })?;
-        return Ok(value.min(100));
-    }
-    #[cfg(not(target_os = "macos"))]
-    Err(DesktopActionError::new(
-        "unsupported_on_current_platform",
-        "System volume control is supported on macOS only",
-    ))
-}
-
+pub fn get_system_volume()->Result<u8,DesktopActionError>{crate::platform::desktop::get_system_volume()}
 #[tauri::command]
-pub fn set_system_volume(volume: i32) -> Result<u8, DesktopActionError> {
-    let volume = clamp_system_volume(volume);
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!("set volume output volume {volume}");
-        let status = Command::new("/usr/bin/osascript")
-            .args(["-e", &script])
-            .status()
-            .map_err(|error| DesktopActionError::new("volume_unavailable", error.to_string()))?;
-        if status.success() {
-            return Ok(volume);
-        }
-
-        return Err(DesktopActionError::new(
-            "volume_unavailable",
-            "Could not set system volume",
-        ));
-    }
-    #[cfg(not(target_os = "macos"))]
-    Err(DesktopActionError::new(
-        "unsupported_on_current_platform",
-        "System volume control is supported on macOS only",
-    ))
-}
-
-fn clamp_system_volume(volume: i32) -> u8 {
-    volume.clamp(0, 100) as u8
-}
-
+pub fn set_system_volume(volume:i32)->Result<u8,DesktopActionError>{crate::platform::desktop::set_system_volume(volume)}
 #[tauri::command]
-pub fn set_system_mute(muted: bool) -> Result<bool, DesktopActionError> {
-    #[cfg(target_os = "macos")]
-    {
-        let script = if muted {
-            "set volume with output muted"
-        } else {
-            "set volume without output muted"
-        };
-        let status = Command::new("/usr/bin/osascript")
-            .args(["-e", script])
-            .status()
-            .map_err(|error| DesktopActionError::new("volume_unavailable", error.to_string()))?;
-        if status.success() {
-            return Ok(muted);
-        }
-        return Err(DesktopActionError::new(
-            "volume_unavailable",
-            "Could not change mute state",
-        ));
-    }
-    #[cfg(not(target_os = "macos"))]
-    Err(DesktopActionError::new(
-        "unsupported_on_current_platform",
-        "Mute control is supported on macOS only",
-    ))
-}
+pub fn set_system_mute(muted:bool)->Result<bool,DesktopActionError>{crate::platform::desktop::set_system_mute(muted)}
+#[cfg(test)]
+fn clamp_system_volume(volume:i32)->u8{crate::platform::desktop::clamp_system_volume(volume)}
 
 #[tauri::command]
 pub fn unsupported_desktop_capability(capability: String) -> Result<(), DesktopActionError> {
@@ -301,7 +172,7 @@ fn normalize_phrase(value: &str) -> String {
         .to_lowercase()
 }
 
-fn validate_web_url(value: &str) -> Result<(), DesktopActionError> {
+pub(crate) fn validate_web_url(value: &str) -> Result<(), DesktopActionError> {
     let value = value.trim();
     let scheme = value
         .split_once(':')
@@ -381,7 +252,7 @@ fn valid_port(value: &str) -> bool {
     value.parse::<u16>().map(|port| port > 0).unwrap_or(false)
 }
 
-fn validate_application(value: &str) -> Result<&'static str, DesktopActionError> {
+pub(crate) fn validate_application(value: &str) -> Result<&'static str, DesktopActionError> {
     match value.trim().to_ascii_lowercase().as_str() {
         "visual studio code" | "vscode" | "code" => Ok("Visual Studio Code"),
         "antigravity" => Ok("Antigravity"),

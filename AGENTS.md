@@ -39,7 +39,7 @@ your PR to.
 | `src-tauri/src/db.rs` | SQLite schema + CRUD. |
 | `src-tauri/src/llm/` | LLM provider trait + Ollama implementation + prompts. |
 | `src-tauri/src/sandbox.rs` | Pet home folder + safe file IO. |
-| `public/sprites/` | PNG sprites referenced by `MochiSprite.svelte`'s SRC map. |
+| `public/sprites/` | PNG sprites referenced by `SpriteRenderer.svelte`'s SRC map. |
 | `PRD.md` | Authoritative spec. Every requirement is `REQ-NNN`. |
 | `BACKLOG.md` | Deferred work with rationale. |
 | `DECISIONS.md` | Recent design decisions and the *why*. |
@@ -151,14 +151,13 @@ Include:
   tests can inject a deterministic stub.
 - **Using `console.log` for instrumentation.** The codebase uses
   `console.warn` for non-fatal failures only. No info-level logs.
-- **Persisting user secrets in cleartext.** API keys live in the dedicated
-  `secrets` table via `set_cloud_api_key`. The frontend never sees them.
+- **Persisting user secrets in cleartext.** API keys live in the OS credential store via `set_cloud_api_key`. The frontend never sees them.
 - **Breaking the salience gate.** Don't call the LLM from a tick handler.
 - **Forgetting `aria-label` / focus management.** Every interactive
   element needs accessible naming. Inbox consent uses a focus trap; copy
   the pattern from `focusTrap.ts`.
 - **Shipping a new sprite without an idle fallback.** If a new pose PNG
-  is missing, `MochiSprite.svelte`'s `onerror` swaps to `mochi-idle.png`.
+  is missing, `SpriteRenderer.svelte`'s `onerror` swaps to `companion-idle.png`.
   Don't break that handler.
 
 ---

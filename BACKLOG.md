@@ -1,4 +1,4 @@
-# Pet Mochi UI/UX Backlog
+# NYRC UI/UX Backlog
 
 Items identified during the 2026-05-03 UI/UX review (self + Codex `gpt-5.5`
 second-opinion + code-reviewer agent) that were intentionally deferred.
@@ -36,11 +36,11 @@ is acceptable. Current single-cooldown behavior may be intentional throttling.
 
 ---
 
-## LOW #16 — Redundant `aria-label` on Mochi SVG
+## LOW #16 — Redundant `aria-label` on NYRC SVG
 
 **Files**
-- `src/lib/components/Pet.svelte` — pet-anchor button has `aria-label="Mochi"`
-- `src/lib/components/MochiSprite.svelte` — root `<svg>` has `aria-label="Mochi pet"`
+- `src/lib/components/Pet.svelte` — pet-anchor button has `aria-label="NYRC"`
+- `src/lib/components/SpriteRenderer.svelte` — root `<svg>` has `aria-label="NYRC pet"`
 
 **Issue**
 Screen readers announce both names back-to-back.
@@ -96,7 +96,7 @@ input {
 ## LOW #19 — Mood color discrimination weak for muted tones
 
 **File**
-- `src/lib/components/MochiSprite.svelte` — `moodPalette`
+- `src/lib/components/SpriteRenderer.svelte` — `moodPalette`
 
 **Issue**
 `bored`, `lonely`, `tired` all use similar grayed-purple body tones. Hard to

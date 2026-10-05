@@ -15,13 +15,13 @@ build step, deployed to GitHub Pages via a small GitHub Actions workflow.
 ## Users
 
 Developers and enthusiasts arriving from the GitHub repo
-(`cskwork/pet-mochi`). Their job: decide in under a minute whether this is
+(`cskwork/nyrc`). Their job: decide in under a minute whether this is
 worth cloning — they want privacy/local-first credibility, a quickstart, and
 proof the project is real (tests, architecture, roadmap).
 
 ## Product Purpose
 
-Pet Mochi is a local-first AI digital pet that lives on the desktop. She
+NYRC is a local-first AI digital pet that lives on the desktop. She
 moves on her own, remembers what matters, and chats briefly through an
 optional local LLM. Success for the page: a visitor clones the repo (and
 stars it).
@@ -40,7 +40,7 @@ chatbots wearing a mascot or cute shells with no memory.
   (Windows / macOS / Linux via Tauri 2).
 - Install: `git clone` → `npm install` → `npm run tauri:dev`.
 - Optional chat: Ollama + small model (e.g. `gemma4:e2b`).
-- Pet home sandbox: `inbox/`, `notes/`, `dreams/`, `exports/`, `mochi.db`.
+- Pet home sandbox: `inbox/`, `notes/`, `dreams/`, `exports/`, `nyrc.db`.
 - North Star quote: *"The pet must feel alive even when the LLM is off."*
 
 ## Capabilities and Constraints
@@ -53,7 +53,7 @@ chatbots wearing a mascot or cute shells with no memory.
   Pat, Rest, Report), welcome-back rituals, keepsakes, drag physics,
   pick-up dangles, themed stage cards (cream/blossom/mint/night).
 - 292 tests passing (213 frontend vitest + 79 backend cargo).
-- MIT license. Repo: github.com/cskwork/pet-mochi.
+- MIT license. Repo: github.com/cskwork/nyrc.
 - Out of scope for MVP (do not advertise as shipped): voice, 3D/Live2D,
   cloud sync, marketplace. Roadmap only.
 - No packaged binaries are published yet — the page must not imply a
@@ -61,7 +61,7 @@ chatbots wearing a mascot or cute shells with no memory.
 
 ## Brand Commitments
 
-- Name: **Pet Mochi** (🍡). The pet is "Mochi", referred to as "she".
+- Name: **NYRC** (🍡). The pet is "NYRC", referred to as "she".
 - Hand-drawn sprite art (in `public/sprites/`) is the product's visual
   identity — the page must use the real sprites, not illustrations of them.
 - Voice: warm, playful, technically honest. Cute surface, rigorous

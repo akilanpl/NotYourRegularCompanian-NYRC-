@@ -1,12 +1,12 @@
 :root {
-  --mochi-bg: rgba(255, 240, 245, 0);
-  --mochi-text: #2c2030;
-  --mochi-pink: #ffc6d3;
-  --mochi-deep-pink: #ff8aa6;
-  --mochi-cream: #fff7ec;
-  --mochi-shadow: rgba(0, 0, 0, 0.18);
+  --nyrc-bg: rgba(255, 240, 245, 0);
+  --nyrc-text: #2c2030;
+  --nyrc-pink: #ffc6d3;
+  --nyrc-deep-pink: #ff8aa6;
+  --nyrc-cream: #fff7ec;
+  --nyrc-shadow: rgba(0, 0, 0, 0.18);
   font-family: "Inter", "Noto Sans KR", -apple-system, system-ui, sans-serif;
-  color: var(--mochi-text);
+  color: var(--nyrc-text);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -30,8 +30,8 @@ body {
 button {
   font-family: inherit;
   border: 0;
-  background: var(--mochi-pink);
-  color: var(--mochi-text);
+  background: var(--nyrc-pink);
+  color: var(--nyrc-text);
   padding: 6px 12px;
   border-radius: 999px;
   cursor: pointer;
@@ -54,20 +54,20 @@ select {
   border: 1px solid #e7d1da;
   outline: none;
   background: white;
-  color: var(--mochi-text);
+  color: var(--nyrc-text);
 }
 
 input:focus,
 textarea:focus,
 select:focus {
-  border-color: var(--mochi-deep-pink);
+  border-color: var(--nyrc-deep-pink);
 }
 
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--mochi-deep-pink);
+  outline: 2px solid var(--nyrc-deep-pink);
   outline-offset: 2px;
 }
 
@@ -76,7 +76,7 @@ select:focus-visible {
    exceed the viewport, so the body becomes a fixed-height scroll container
    (html stays overflow:hidden, so body must own the scrolling) (REQ-115). */
 body.settings-page {
-  background: var(--mochi-cream);
+  background: var(--nyrc-cream);
   height: 100vh;
   overflow-y: auto;
 }

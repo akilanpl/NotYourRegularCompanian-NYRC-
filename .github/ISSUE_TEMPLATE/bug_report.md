@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Something Mochi does (or doesn't do) that surprised you.
+about: Something NYRC does (or doesn't do) that surprised you.
 labels: bug
 ---
 
@@ -17,11 +17,11 @@ labels: bug
 
 **Environment**
 - OS:
-- Mochi version (or commit SHA):
+- NYRC version (or commit SHA):
 - LLM provider (if any):
 
 **Logs / screenshots**
 <!-- Pet bubbles often surface the real error after my recent change —
      e.g. `(save failed: invalid type: floating point …)`. Paste anything
-     you see. DevTools console (right-click on Mochi → not yet, but
+     you see. DevTools console (right-click on NYRC → not yet, but
      `npm run tauri:dev` opens DevTools alongside) is also useful. -->

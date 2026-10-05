@@ -423,25 +423,25 @@ mod tests {
 
     #[test]
     fn canned_report_includes_pet_name_and_is_short() {
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let text = canned_report_text(&pet, &sample());
-        assert!(text.contains("Mochi"), "canned text should name the pet");
+        assert!(text.contains("NYRC"), "canned text should name the pet");
         // Cute & concise — keep it under ~200 chars so the bubble fits.
         assert!(text.len() < 280, "canned report should be brief, got {} chars", text.len());
     }
 
     #[test]
     fn canned_report_handles_zero_events() {
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let text = canned_report_text(&pet, &[]);
         // Should still be cute and never empty.
         assert!(!text.is_empty());
-        assert!(text.contains("Mochi"));
+        assert!(text.contains("NYRC"));
     }
 
     #[test]
     fn markdown_has_title_summary_and_tally() {
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let md = build_report_markdown(
             &pet,
             "We had a sweet quiet morning together. ✨",
@@ -449,7 +449,7 @@ mod tests {
             "2026-05-03T21:10:00Z",
         );
         assert!(md.starts_with("# "), "should start with an h1 title");
-        assert!(md.contains("Mochi"));
+        assert!(md.contains("NYRC"));
         assert!(md.contains("2026-05-03"));
         assert!(md.contains("We had a sweet quiet morning"));
         assert!(md.contains("USER_CLICKED_PET"));
@@ -612,7 +612,7 @@ mod tests {
             "2026-05-03T08:00:00Z",
             "2026-05-03T20:00:00Z",
         );
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let r = deterministic_status_report(&pet, &summary);
         let len = r.prose.chars().count();
         assert!(
@@ -634,12 +634,12 @@ mod tests {
             "2026-05-03T08:00:00Z",
             "2026-05-03T20:00:00Z",
         );
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let r = deterministic_status_report(&pet, &summary);
         // Even with no data, prose must exist and pass validator length.
         let len = r.prose.chars().count();
         assert!((180..=440).contains(&len), "got {len}");
-        assert!(r.prose.contains("Mochi"));
+        assert!(r.prose.contains("NYRC"));
     }
 
     #[test]
@@ -651,7 +651,7 @@ mod tests {
             "2026-05-03T08:00:00Z",
             "2026-05-03T20:00:00Z",
         );
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let r = deterministic_status_report(&pet, &summary);
         // "USER_CLICKED_PET" should render as "pats" — never as the raw
         // event type name (the prose is human-readable, not log output).
@@ -679,7 +679,7 @@ mod tests {
             "2026-05-03T08:00:00Z",
             "2026-05-03T20:00:00Z",
         );
-        let pet = PetState::new("Mochi");
+        let pet = PetState::new("NYRC");
         let r = deterministic_status_report(&pet, &summary);
         let wants = r.wants.unwrap();
         assert!(

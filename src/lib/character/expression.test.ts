@@ -29,7 +29,7 @@ describe("companion expression vocabulary", () => {
       "annoyed",
     ]);
     expect(isCompanionExpression("focused")).toBe(true);
-    expect(isCompanionExpression("mochi-happy.png")).toBe(false);
+    expect(isCompanionExpression("companion-happy.png")).toBe(false);
   });
 
   it("keeps utility and system signals separate from expressions", () => {

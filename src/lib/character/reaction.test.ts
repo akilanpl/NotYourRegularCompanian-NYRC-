@@ -24,7 +24,7 @@ describe("semantic reactions", () => {
     expect(validateReaction({ expression: "happy", intensity: 1.1 })).toBeNull();
     expect(validateReaction({ expression: "happy", intensity: null })).toBeNull();
     expect(validateReaction({ expression: "happy", durationMs: 0 })).toBeNull();
-    expect(validateReaction({ expression: "happy", filename: "mochi-happy.png" })).toBeNull();
+    expect(validateReaction({ expression: "happy", filename: "companion-happy.png" })).toBeNull();
   });
 
   it("maps touch frequency to restrained acknowledgement reactions", () => {
@@ -55,6 +55,6 @@ describe("semantic reactions", () => {
 
   it("does not constrain the companion's name", () => {
     expect(newPetState("Nova").name).toBe("Nova");
-    expect(newPetState("Mochi").name).toBe("Mochi");
+    expect(newPetState("NYRC").name).toBe("NYRC");
   });
 });

@@ -256,7 +256,7 @@ mod tests {
     use super::*;
     #[test]
     fn pocket_restart_and_limits() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         let path = dir.path().join("test.db");
         let db = crate::db::Db::open(&path).unwrap();
         let i = save_pocket(&db, "text", "Note", "hello".into(), 1024).unwrap();
@@ -270,7 +270,7 @@ mod tests {
     }
     #[test]
     fn pocket_file_traversal() {
-        let d = tempfile::tempdir().unwrap();
+        let d = tempfile::tempdir_in(std::env::temp_dir().canonicalize().unwrap()).unwrap();
         crate::sandbox::ensure_pet_home(d.path()).unwrap();
         for n in ["../secret", "/etc/passwd", "..\\secret"] {
             assert!(crate::sandbox::read_inbox_by_name(d.path(), n).is_err());

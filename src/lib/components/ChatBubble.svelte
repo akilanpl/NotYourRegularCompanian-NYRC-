@@ -30,7 +30,7 @@
   .bubble {
     position: relative;
     background: var(--bg);
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
     border-radius: 14px;
     padding: 10px 14px;
     font-size: 13px;

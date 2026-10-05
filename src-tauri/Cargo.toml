@@ -1,5 +1,5 @@
 [package]
-name = "pet-mochi"
+name = "nyrc"
 version = "0.2.0"
 description = "NYRC — Not Your Regular Companion. A local-first intelligent personal companion."
 authors = ["NYRC Contributors"]
@@ -8,7 +8,7 @@ edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "pet_mochi_lib"
+name = "nyrc_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -19,9 +19,9 @@ tauri = { version = "2.1", features = ["macos-private-api"] }
 tauri-plugin-notification = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net", "io-util"] }
 notify = "6.1"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }

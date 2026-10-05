@@ -101,6 +101,6 @@ describe("REQ-110 celebration copy", () => {
   });
 
   it("bubble names the pet", () => {
-    expect(hatchdayBubble("Mochi", 1)).toContain("Mochi");
+    expect(hatchdayBubble("NYRC", 1)).toContain("NYRC");
   });
 });

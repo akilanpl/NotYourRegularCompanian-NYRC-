@@ -55,7 +55,7 @@ node tools/developer-event.mjs '<NYRC-home>' developer.tests.passed 'All tests p
 node tools/developer-event.mjs '<NYRC-home>' developer.build.failed 'Type check failed in the latest build'
 ```
 
-The default data directory uses the platform's local data directory plus `pet-mochi`. The `MOCHI_HOME` environment override remains supported. The helper writes via atomic rename. Events delivered while the app is stopped are not replayed at startup; status snapshots and deduplication survive restart. Source files are local and user-owned; no remote editor integration is assumed.
+The default data directory uses the platform's local data directory plus `nyrc`. The `NYRC_HOME` environment override remains supported. The helper writes via atomic rename. Events delivered while the app is stopped are not replayed at startup; status snapshots and deduplication survive restart. Source files are local and user-owned; no remote editor integration is assumed.
 
 Semantic reactions: started → focused; successful tests/build/task → pleased/success; failed tests/build → concerned; waiting → waiting; permission required → attentive. Ask `what failed in the latest build` for the latest recorded build/test failure message.
 

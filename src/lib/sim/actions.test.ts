@@ -230,7 +230,7 @@ describe("applyAction immutability and metadata", () => {
   });
 
   it("clears the curious mood IMMEDIATELY (single tap, no waiting for tick)", () => {
-    // The MochiSprite "?" overlay is bound to pet.mood, not pet.curiosity.
+    // The SpriteRenderer "?" overlay is bound to pet.mood, not pet.curiosity.
     // If applyAction only nudges curiosity but leaves mood frozen at
     // "curious", users see the ? linger until the next 3-second sim tick.
     // A single Pat must drop the user out of curious immediately.

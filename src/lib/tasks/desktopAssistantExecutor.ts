@@ -1,3 +1,4 @@
+import { CapabilityRegistry } from "../platform/capabilities";
 import { reactionsFor } from "../character";
 import { api } from "../bridge/api";
 import {
@@ -77,7 +78,7 @@ export type DesktopAssistantBackend = Pick<typeof api,
 >;
 
 export class DesktopAssistantExecutor implements ActionExecutor {
-  constructor(private readonly backend: DesktopAssistantBackend = api) {}
+  constructor(private readonly backend: DesktopAssistantBackend = api, private registry: CapabilityRegistry | null = backend === api ? new CapabilityRegistry() : null) {}
   canExecute(action: CompanionAction): boolean {
     return (ACTIONS as readonly string[]).includes(action.id);
   }
@@ -87,6 +88,8 @@ export class DesktopAssistantExecutor implements ActionExecutor {
       return actionFailure("unsupported_action", `Unsupported assistant action: ${action.id}`);
     }
     try {
+      const unavailable = await this.registry?.check(action.id);
+      if (unavailable) return actionFailure(unavailable.code, unavailable.message);
       switch (action.id) {
         case "web.open":
           await this.backend.openWebsite(requiredString(action.payload, "url"));

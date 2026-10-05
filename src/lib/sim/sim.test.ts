@@ -363,7 +363,7 @@ describe("computeAwayMinutes / persistence regression", () => {
     const now = Date.parse("2026-05-03T12:30:00Z");
     const awayMinutesExpected = 90;
     const past = new Date(now - awayMinutesExpected * 60_000).toISOString();
-    const before: PetState = { ...newPetState("Mochi"), lastInteractionAt: past };
+    const before: PetState = { ...newPetState("NYRC"), lastInteractionAt: past };
 
     // Simulate the bridge: save_pet_state serializes via serde → JSON →
     // load_pet_state deserializes. We round-trip through JSON to mirror the

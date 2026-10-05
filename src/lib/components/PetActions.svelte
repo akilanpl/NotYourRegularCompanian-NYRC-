@@ -107,7 +107,7 @@
     border: 0;
     border-radius: 12px;
     background: rgba(255, 240, 245, 0.85);
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     cursor: pointer;
     transition: transform 0.08s ease, background 0.15s ease;
   }

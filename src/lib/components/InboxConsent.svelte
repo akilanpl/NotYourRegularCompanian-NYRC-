@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Consent prompt for inbox files. Asks the user before Mochi reads any file
+   * Consent prompt for inbox files. Asks the user before NYRC reads any file
    * dropped into the sandbox (PRD §21.10 / REQ-084).
    *
    * - "Read" calls `approve_file` and dismisses on success.
@@ -125,7 +125,7 @@
 <style>
   .consent {
     background: #fff;
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
     border-radius: 14px;
     padding: 12px 14px 10px;
     font-size: 13px;
@@ -174,14 +174,14 @@
   }
   .primary {
     background: #ffb3c1;
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
   }
   .primary:hover:not(:disabled) {
     background: #ff9bad;
   }
   .secondary {
     background: rgba(0, 0, 0, 0.06);
-    color: var(--mochi-text);
+    color: var(--nyrc-text);
   }
   .secondary:hover:not(:disabled) {
     background: rgba(0, 0, 0, 0.1);

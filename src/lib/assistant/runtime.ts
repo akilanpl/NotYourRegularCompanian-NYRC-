@@ -1,3 +1,4 @@
+import { CapabilityRegistry } from "../platform/capabilities";
 import { TaskManager } from "../tasks/taskManager";
 import { LocalUtilityExecutor } from "../tasks/localUtilityExecutor";
 import { DesktopAssistantExecutor } from "../tasks/desktopAssistantExecutor";
@@ -27,6 +28,14 @@ export class AssistantRuntime {
   private calendarHours = 0;
   private interactions: { at: number; text: string }[] = [];
   private developerResults: { at: number; ok: boolean }[] = [];
+  private bodyInteractions: {at:number;text:string}[]=[];
+  observeBody(type:string) {
+    if(["touch","hold","double_tap","shake","pickup","put_down","sleep","wake"].includes(type)) {
+      this.bodyInteractions.push({at:Date.now(),text:type});
+      this.interactions.push({at:Date.now(),text:`body:${type}`});
+      this.adapt({});
+    }
+  }
   observeDeveloper(type: string) {
     if (/passed|success|completed|failed/.test(type))
       this.developerResults.push({ at: Date.now(), ok: !/failed/.test(type) });
@@ -45,6 +54,7 @@ export class AssistantRuntime {
     this.interactions = this.interactions
       .filter((e) => e.at >= cutoff)
       .slice(-50);
+    this.bodyInteractions=this.bodyInteractions.filter(e=>e.at>=cutoff).slice(-50);
     this.estimatedState = estimateState({
       hour: new Date().getHours(),
       successes:
@@ -64,6 +74,7 @@ export class AssistantRuntime {
         (e) => e.text === this.interactions.at(-1)?.text,
       ).length,
       calendarHours: this.calendarHours,
+      body:{shakes:this.bodyInteractions.filter(e=>e.text==="shake").length,pickups:this.bodyInteractions.filter(e=>e.text==="pickup").length,absence:this.bodyInteractions.at(-1)?.text==="sleep"},
       manual: this.manual,
     });
     return adaptation(this.estimatedState);
@@ -79,8 +90,10 @@ export class AssistantRuntime {
       canExecute: (a) =>
         /^(pocket|calendar|clipboard)\./.test(a.id) ||
         a.id === "developer.task.status",
-      execute: (a) =>
-        invoke("assistant_service", { action: a.id, payload: a.payload })
+      execute: async (a) => {
+        const blocked=await new CapabilityRegistry().check(a.id);
+        if(blocked)return actionFailure(blocked.code,blocked.message);
+        return invoke("assistant_service", { action: a.id, payload: a.payload })
           .then((data) => ({ ok: true as const, data }))
           .catch((error: unknown) =>
             actionFailure(
@@ -89,7 +102,8 @@ export class AssistantRuntime {
                 ? error
                 : "The service is unavailable. Check its settings and try again.",
             ),
-          ),
+          );
+      },
     };
     const all = executors ?? [
       new LocalUtilityExecutor(timers),

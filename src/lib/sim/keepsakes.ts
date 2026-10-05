@@ -3,7 +3,7 @@ import type { PetState } from "./state";
 /**
  * Keepsake gifts (PRD §27.5, REQ-109).
  *
- * After sustained good care, Mochi leaves a small trinket, persisted as a
+ * After sustained good care, NYRC leaves a small trinket, persisted as a
  * durable memory of type {@link KEEPSAKE_MEMORY_TYPE}. Research finding #3:
  * the pet *giving back* is the strongest attachment mechanic (Neko Atsume
  * mementos). Pure module — the caller owns IO and timing.

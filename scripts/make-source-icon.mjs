@@ -1,4 +1,4 @@
-// Generates icons/source.png — a 512x512 mochi pet icon — using only Node built-ins.
+// Generates icons/source.png — a 512x512 nyrc pet icon — using only Node built-ins.
 import { writeFileSync, mkdirSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { dirname, resolve } from "node:path";
@@ -37,7 +37,7 @@ function chunk(type, data) {
   return Buffer.concat([len, typeBuf, data, crcVal]);
 }
 
-// Build pixel data — round mochi shape with face.
+// Build pixel data — round nyrc shape with face.
 const stride = W * 4;
 const raw = Buffer.alloc(H * (stride + 1));
 
@@ -60,7 +60,7 @@ for (let y = 0; y < H; y++) {
     const dy = y - cy + 18;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Body — soft pink mochi, with slight gradient.
+    // Body — soft pink nyrc, with slight gradient.
     if (dist < bodyR) {
       const t = dist / bodyR;
       const r = Math.round(255 - t * 12);

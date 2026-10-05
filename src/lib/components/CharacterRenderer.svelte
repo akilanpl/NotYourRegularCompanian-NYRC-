@@ -1,18 +1,18 @@
 <script lang="ts">
-  import MochiSprite from "./MochiSprite.svelte";
+  import SpriteRenderer from "./SpriteRenderer.svelte";
   import type { CompanionExpression, Reaction } from "../character";
   import {
-    donorAnimationForExpression,
-    donorAnimationForReaction,
+    animationForExpression,
+    animationForReaction,
   } from "../character";
   import type { Mood, MovementState } from "../sim/state";
 
   type Props = {
     expression: CompanionExpression;
     reaction?: Reaction | null;
-    /** Temporary donor-state passthrough; new features should use expression/reaction. */
+    /** Temporary simulation-state passthrough; new features should use expression/reaction. */
     animation?: MovementState;
-    /** Temporary tint/overlay passthrough for the donor renderer. */
+    /** Temporary tint/overlay passthrough for the sprite renderer. */
     mood?: Mood;
     size?: number;
     facing?: "left" | "right";
@@ -31,12 +31,12 @@
 
   let renderedAnimation = $derived(
     reaction
-      ? donorAnimationForReaction(reaction)
-      : animation ?? donorAnimationForExpression(expression),
+      ? animationForReaction(reaction)
+      : animation ?? animationForExpression(expression),
   );
 </script>
 
-<MochiSprite
+<SpriteRenderer
   mood={mood}
   animation={renderedAnimation}
   {size}

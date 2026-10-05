@@ -6,7 +6,7 @@
 
 ## 0. Goals
 
-1. Make Mochi's world respond to the *real* environment: time of day, screen
+1. Make NYRC's world respond to the *real* environment: time of day, screen
    edges, multiple monitors, critical needs.
 2. Improve modularity so these features (and the next ones) land in small,
    pure, testable modules instead of growing `Pet.svelte`.
@@ -98,14 +98,14 @@ stays in a thin `bridge/roamer.ts` wrapper.
 ### REQ-122 — Opt-in critical-need notifications (amends §27.2)
 
 §27.2 principle 1 ("no notifications") is amended: **with explicit user
-opt-in** (default **off**), Mochi sends an OS notification when a need crosses
+opt-in** (default **off**), NYRC sends an OS notification when a need crosses
 critical: `hunger > 85`, `energy < 12`, or `stress > 80`. Rules:
 
 - New setting `desktop_notifications: bool` (`#[serde(default)]` → false;
   Settings UI toggle under a "Environment" group).
 - Pure gate `sim/notifications.ts:shouldNotify(state, lastByKind, now)` —
   per-kind cooldown 60 min, global 30 min, suppressed while the settings
-  window is focused (the user is already looking at Mochi), suppressed for
+  window is focused (the user is already looking at NYRC), suppressed for
   the first 10 minutes after launch (no notification on boot). Unit-tested.
 - Copy is kind, never guilty — enforced by a forbidden-phrases test like
   REQ-108's ("finally", "you left me", "why did you", …).

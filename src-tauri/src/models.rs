@@ -485,7 +485,7 @@ mod model_tests {
     /// still deserialize, defaulting to the transparent overlay and sounds on.
     #[test]
     fn settings_legacy_json_defaults_new_fields() {
-        let legacy = r#"{"petName":"Mochi","personalityPreset":"curious","llmProvider":"ollama","ollamaEndpoint":"http://localhost:11434","ollamaModel":"gemma4:e2b","localOnlyMode":true,"autonomousSpeech":true,"memoryEnabled":true,"animationIntensity":1.0,"alwaysOnTop":true,"startOnLogin":false,"petHomePath":null,"developerEventLog":false}"#;
+        let legacy = r#"{"petName":"NYRC","personalityPreset":"curious","llmProvider":"ollama","ollamaEndpoint":"http://localhost:11434","ollamaModel":"gemma4:e2b","localOnlyMode":true,"autonomousSpeech":true,"memoryEnabled":true,"animationIntensity":1.0,"alwaysOnTop":true,"startOnLogin":false,"petHomePath":null,"developerEventLog":false}"#;
         let s: Settings = serde_json::from_str(legacy).unwrap();
         assert_eq!(s.stage_background, "transparent");
         assert!(s.sound_effects);

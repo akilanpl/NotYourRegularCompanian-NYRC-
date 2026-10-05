@@ -1,12 +1,12 @@
-# Contributing to Pet Mochi
+# Contributing to NYRC
 
-Thanks for considering a contribution. Pet Mochi is a small, opinionated
+Thanks for considering a contribution. NYRC is a small, opinionated
 project — the bar for accepted PRs is *clarity over cleverness* and *match
 the spirit of the existing simulation-first design*.
 
 > **Project North Star:** the pet must feel alive even when the LLM is off.
 
-If your change makes Mochi *more* dependent on a network or LLM call to feel
+If your change makes NYRC *more* dependent on a network or LLM call to feel
 alive, please discuss it in an issue first.
 
 ---
@@ -14,8 +14,8 @@ alive, please discuss it in an issue first.
 ## Quick start
 
 ```bash
-git clone https://github.com/cskwork/pet-mochi.git
-cd pet-mochi
+git clone https://github.com/akilanpl/NotYourRegularCompanian-NYRC-.git
+cd nyrc
 npm install
 npm run tauri:dev          # the desktop pet, hot-reloaded
 ```
@@ -67,7 +67,7 @@ fully alive pet.
 
 - 🐛 **Bug fixes** with a regression test that reproduces the bug.
 - ✨ **New animation poses / sprite variants** — see `public/sprites/` and
-  `src/lib/components/MochiSprite.svelte` `SRC` map.
+  `src/lib/components/SpriteRenderer.svelte` `SRC` map.
 - 🧠 **Better mood/decay tuning** — keep changes small and explain the
   rationale (e.g. user-tested for 30 minutes, observed X).
 - 🔌 **New LLM providers** — implement the `LlmProvider` trait

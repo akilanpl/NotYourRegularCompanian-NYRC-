@@ -1,3 +1,3 @@
 export * from "./expression";
 export * from "./reaction";
-export * from "./donorMapping";
+export * from "./rendererMapping";

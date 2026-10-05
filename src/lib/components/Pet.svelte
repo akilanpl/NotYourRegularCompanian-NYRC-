@@ -1,4 +1,10 @@
 <script lang="ts">
+  import {attachLocalTransport} from "../body/transport";
+  import {bodyCore} from "../body/session";
+  import {DesktopBodyAdapter} from "../body/adapters";
+  import type {BodyCommand,BodyInputEvent} from "../body/protocol";
+  import {emit} from "../bridge/tauri";
+  import {isCompanionExpression} from "../character/expression";
   import { onMount, onDestroy } from "svelte";
   import CharacterRenderer from "./CharacterRenderer.svelte";
   import ChatBubble from "./ChatBubble.svelte";
@@ -54,8 +60,7 @@
     type SnackKey,
   } from "../sim";
   import {
-    expressionForLegacyMood,
-    reactionForInteraction,
+    expressionForMood,
     type Reaction,
   } from "../character";
   import {
@@ -150,7 +155,7 @@
     pet: "affection",
     rest: "energy",
   };
-  // Status panel starts collapsed so it never covers Mochi on first launch.
+  // Status panel starts collapsed so it never covers NYRC on first launch.
   // Users can re-open it from the floating chip in the top-left corner.
   let statusOpen = $state(false);
   let positionInitialised = false;
@@ -242,6 +247,8 @@
 
   // Drag/click separation state — startDragging fires only after the pointer
   // moves beyond DRAG_THRESHOLD; otherwise the click handler runs normally.
+  let pointerPressedAt=0;
+  let clickGesture:"touch"|"hold"|"double_tap"="touch";
   let dragStart: { x: number; y: number; pointerId: number } | null = null;
   let dragged = false;
 
@@ -303,7 +310,26 @@
     };
   }
 
-  function setCharacterReaction(reaction: Reaction) {
+  let bodySoundAllowedUntil=0;
+  let offBodyDiagnostics=()=>{};
+  let offBodyRequest=()=>{};
+  let offTransport=()=>{};
+  let offBodyState=()=>{};
+  let offVirtualBody:(()=>void)|undefined;
+  const desktopBody = new DesktopBodyAdapter(renderBodyCommand);
+  function renderBodyCommand(command:BodyCommand) {
+    if(command.type === "expression" && isCompanionExpression(String(command.payload.id))) {
+      applyCharacterReaction({expression:command.payload.id as Reaction["expression"],intensity:Number(command.payload.intensity),durationMs:Number(command.payload.durationMs)});
+    } else if(command.type === "animation" && characterReaction) {
+      applyCharacterReaction({...characterReaction,gesture:command.payload.id as Reaction["gesture"]});
+    } else if(command.type === "sound" && Date.now()<bodySoundAllowedUntil) playSfx(command.payload.id === "acknowledge" ? "boop" : "chime");
+    else if(command.type === "status_indicator" && command.payload.state === "offline") applyCharacterReaction(reactionsFor("offline")[0]);
+    else if(command.type === "sleep") applyCharacterReaction({expression:"sleeping",intensity:.2,durationMs:1200});
+    else if(command.type === "wake") applyCharacterReaction({expression:"attentive",intensity:.2,durationMs:900});
+    else if(command.type === "text") flashBubble(String(command.payload.text),4000);
+  }
+  function setCharacterReaction(reaction: Reaction) { bodyCore.react(reaction); void emit("body:reaction",reaction); }
+  function applyCharacterReaction(reaction: Reaction) {
     if (characterReactionTimer) clearTimeout(characterReactionTimer);
     characterReaction = reaction;
     characterReactionTimer = setTimeout(() => {
@@ -502,7 +528,7 @@
     }
 
     // Wander while walking/running. The status panel (when open) and the
-    // actions panel are passed as obstacles so Mochi never visually disappears
+    // actions panel are passed as obstacles so NYRC never visually disappears
     // behind UI chrome.
     if (next.currentAnimation === "walk" || next.currentAnimation === "run") {
       // REQ-120 — at a viewport edge the window follows the pet's un-clamped
@@ -978,12 +1004,8 @@
       }
       petTapCount += 1;
       if (characterReactionTimer) clearTimeout(characterReactionTimer);
-      const reaction = reactionForInteraction(petTapCount);
-      characterReaction = reaction;
-      characterReactionTimer = setTimeout(() => {
-        characterReaction = null;
-        characterReactionTimer = undefined;
-      }, reaction.durationMs);
+      desktopBody.simulate(clickGesture);
+      clickGesture="touch";
     }
     lastInteractionAt = Date.now();
     recentPositive = true;
@@ -994,7 +1016,7 @@
     const burst = ACTION_TO_BURST[key];
     if (burst) spawnBurst(burst);
     const sound = key in ACTION_TO_SFX ? ACTION_TO_SFX[key as keyof typeof ACTION_TO_SFX] : null;
-    if (sound) playSfx(sound);
+    if (sound && key!=="pet") playSfx(sound);
     // Pulse the affected gauge so the user sees the action register, even
     // if the stat was already at its cap.
     const statKey = ACTION_TO_STAT[key];
@@ -1028,7 +1050,7 @@
       flashBubble(`${pet.name}: ${report.text}${tail}`, 8_000);
       // Surface the file path in the dev console so power users can find it
       // without us cluttering the bubble UI.
-      console.info("[mochi] report saved →", report.savedPath);
+
       pet = { ...pet, currentAnimation: "celebrate" };
     } catch (err) {
       console.warn("generateInteractionReport failed", err);
@@ -1051,6 +1073,8 @@
 
   function onPointerDown(e: PointerEvent) {
     if (e.button !== 0) return;
+    pointerPressedAt=Date.now();
+    clickGesture="touch";
     dragStart = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
     dragged = false;
     pressed = true; // REQ-104 press squish
@@ -1081,6 +1105,7 @@
   /** REQ-112 — dangle pose + baseline for landing detection. The pinned grab
    *  pose auto-expires after 15s in case a platform never reports the drop. */
   function beginOsDrag() {
+    desktopBody.simulate("pickup");
     osDragging = true;
     osDragStartedAt = Date.now();
     stableWinSamples = 0;
@@ -1100,6 +1125,7 @@
   }
 
   function finishDragLanding(winPos: { x: number; y: number }) {
+    desktopBody.simulate("put_down");
     osDragging = false;
     const sf = cachedScaleFactor || 1;
     const distance = dragStartWinPos
@@ -1120,6 +1146,7 @@
   }
 
   function onPetPointerUp(e: PointerEvent) {
+    if(!dragged && Date.now()-pointerPressedAt>=600)clickGesture="hold";
     (e.currentTarget as HTMLElement | null)?.releasePointerCapture?.(e.pointerId);
     dragStart = null;
     pressed = false;
@@ -1129,7 +1156,8 @@
     dragged = false;
   }
 
-  async function onPetClick() {
+  async function onPetClick(e:MouseEvent) {
+    if(e.detail===2 && clickGesture!=="hold")clickGesture="double_tap";
     if (dragged) {
       dragged = false;
       return;
@@ -1143,7 +1171,7 @@
   let menuOpen = $state(false);
   let menuPos = $state({ x: 0, y: 0 });
   const MENU_W = 140;
-  // Two items now: Settings… + Close Mochi (REQ-115).
+  // Two items now: Settings… + Close NYRC (REQ-115).
   const MENU_H = 76;
 
   function openContextMenu(e: MouseEvent) {
@@ -1319,7 +1347,7 @@
   function toggleStatus() {
     statusOpen = !statusOpen;
     // If the new panel size now overlaps the pet, gently relocate it to a
-    // safe spot. Without this, opening status while Mochi is in the corner
+    // safe spot. Without this, opening status while NYRC is in the corner
     // would visually swallow her until the next walk tick.
     const obs = currentObstacles();
     const overlaps = obs.some(
@@ -1443,6 +1471,12 @@
   onMount(async () => {
     onResize();
     window.addEventListener("resize", onResize);
+    void bodyCore.connect(desktopBody);
+    attachLocalTransport(bodyCore).then(off=>{if(destroyed)off();else offTransport=off;});
+    offBodyDiagnostics=bodyCore.subscribe(()=>{void emit("body:diagnostics",bodyCore.diagnostics());});
+    listen("body:diagnostics-request",()=>{void emit("body:diagnostics",bodyCore.diagnostics());}).then(off=>{if(destroyed)off();else offBodyRequest=off;});
+    offBodyState=bodyCore.observe(event=>{assistantRuntime.observeBody(event.type);if(["touch","hold","double_tap","button"].includes(event.type))bodySoundAllowedUntil=Date.now()+1000;});
+    listen<BodyInputEvent>("body:virtual-input",event=>desktopBody.simulate(event.type,event.payload)).then(off=>{if(destroyed)off();else offVirtualBody=off;});
     window.addEventListener("pointermove", onPointerMove);
     void listen<DeveloperEvent>("developer:event", event => {
       if (!validDeveloperEvent(event)) return;
@@ -1491,7 +1525,7 @@
 
     await syncFromBackend();
 
-    // Place Mochi in a sensible visible spot once the viewport is known.
+    // Place NYRC in a sensible visible spot once the viewport is known.
     // Default (0,0) would put her in the corner under the status chip.
     if (!positionInitialised) {
       position = findSafeStartPosition(
@@ -1507,7 +1541,7 @@
 
     // Gates every decorative motion path (REQ-113) and follows OS toggles
     // live (timer-free change listener). The old blink interval was removed —
-    // MochiSprite ignores the blink prop by design (eyes are baked into each
+    // SpriteRenderer ignores the blink prop by design (eyes are baked into each
     // pose), so the timer was dead weight.
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     reducedMotion = reducedMotionQuery.matches;
@@ -1558,7 +1592,7 @@
       }
 
       // REQ-122 — best-effort focus tracking on the settings window: while it
-      // holds focus the user is already looking at Mochi, so the notification
+      // holds focus the user is already looking at NYRC, so the notification
       // gate suppresses. Two one-shot setup listeners; no timer involved.
       try {
         const settingsWin = await Window.getByLabel("settings");
@@ -1653,7 +1687,7 @@
             api
               .logEvent("FILE_FOUND_IN_INBOX", payload.name, 55)
               .catch(() => undefined);
-            // REQ-101 — route the moment through the bus so Mochi visibly
+            // REQ-101 — route the moment through the bus so NYRC visibly
             // notices the letter (curious peek) instead of only logging it.
             eventBus.dispatch(
               { type: "FILE_FOUND_IN_INBOX", path: payload.name },
@@ -1691,6 +1725,12 @@
     snack.dispose();
     clearActionTimers();
     window.removeEventListener("resize", onResize);
+    void bodyCore.disconnect("desktop");
+    offBodyDiagnostics();
+    offBodyRequest();
+    offTransport();
+    offBodyState();
+    offVirtualBody?.();
     window.removeEventListener("pointermove", onPointerMove);
     if (unlistenInbox) unlistenInbox();
     if (unlistenSettings) unlistenSettings();
@@ -1734,7 +1774,7 @@
     aria-label={pet.name}
   >
     <CharacterRenderer
-      expression={expressionForLegacyMood(pet.mood)}
+      expression={expressionForMood(pet.mood)}
       reaction={characterReaction}
       mood={pet.mood}
       animation={pet.currentAnimation}
@@ -2027,7 +2067,7 @@
     border: 0;
     border-radius: 10px;
     background: rgba(255, 240, 245, 0.85);
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     cursor: pointer;
     transition: transform 0.08s ease, background 0.15s ease;
   }
@@ -2107,7 +2147,7 @@
     width: 100%;
     border: 0;
     background: transparent;
-    color: var(--mochi-text, #3a2b34);
+    color: var(--nyrc-text, #3a2b34);
     padding: 8px 12px;
     border-radius: 6px;
     font-size: 13px;
