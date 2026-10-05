@@ -18,3 +18,5 @@ test('artifact architecture labels follow executable headers',()=>{
  const pe=Buffer.alloc(96);pe.writeUInt16LE(0x5a4d);pe.writeUInt32LE(64,0x3c);pe.writeUInt32LE(0x4550,64);pe.writeUInt16LE(0x8664,68);assert.equal(verifyArchitecture(pe,'x86_64-pc-windows-msvc'),'x86_64-pc-windows-msvc');
  assert.throws(()=>verifyArchitecture(Buffer.alloc(2),'aarch64-apple-darwin'));
 });
+
+test('derived Apple build metadata cannot drift',()=>{const root=fixture();try{const p=path.join(root,'src-tauri/tauri.conf.json');const config=JSON.parse(fs.readFileSync(p));config.bundle.macOS.bundleVersion='1.0.0fc2';fs.writeFileSync(p,JSON.stringify(config));assert.notEqual(spawnSync(process.execPath,[script],{cwd:root}).status,0);}finally{fs.rmSync(root,{recursive:true,force:true});}});

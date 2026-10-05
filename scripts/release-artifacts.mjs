@@ -20,6 +20,10 @@ const out='release-artifacts';fs.mkdirSync(out,{recursive:true});
 const copied=[];
 if(platform==='macOS'){
  const source=path.join(root,'macos','NYRC.app');
+ const plist=fs.readFileSync(path.join(source,'Contents','Info.plist'),'utf8');
+ const field=key=>plist.match(new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`))?.[1];
+ const numeric=version.split('-')[0];const rc=version.match(/-rc\.(\d+)$/)?.[1];
+ if(field('CFBundleShortVersionString')!==numeric||field('CFBundleVersion')!==(rc?`${numeric}fc${rc}`:numeric)||field('NYRCReleaseVersion')!==version)throw Error('Packaged Apple version mapping mismatch');
  const dest=path.join(out,`${prefix}.zip`);
  const p=spawnSync('ditto',['-c','-k','--sequesterRsrc','--keepParent',source,dest],{stdio:'inherit'});if(p.status!==0)throw Error('App archive failed');copied.push(dest);
 }
