@@ -15,7 +15,7 @@ pub fn sensitive(action: &str) -> bool {
             | "pocket.delete"
             | "pocket.save_file"
             | "pocket.export_file"
-            | "inbox.approve" | "provider.configure"
+            | "inbox.approve" | "provider.configure" | "memory.export" | "calendar.configure" | "calendar.disconnect"
     )
 }
 
@@ -114,6 +114,9 @@ mod tests {
             "calendar.delete",
             "pocket.delete",
             "inbox.approve",
+            "memory.export",
+            "calendar.configure",
+            "calendar.disconnect",
         ] {
             assert!(sensitive(action));
         }

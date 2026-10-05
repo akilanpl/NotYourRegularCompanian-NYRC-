@@ -277,7 +277,9 @@ mod transport_tests {
             .await
             .unwrap_err()
             .to_string();
-        assert!(e.contains("network failure"));
+        // Windows can time out a refused loopback connection before reporting refusal.
+        assert!(e.contains("network failure") || e.contains("timeout"));
+        assert!(!e.contains("127.0.0.1"));
         assert!(!e.contains("test-only-key"));
     }
 }

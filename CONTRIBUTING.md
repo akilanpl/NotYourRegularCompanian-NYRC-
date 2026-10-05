@@ -15,12 +15,12 @@ alive, please discuss it in an issue first.
 
 ```bash
 git clone https://github.com/akilanpl/NotYourRegularCompanian-NYRC-.git
-cd nyrc
-npm install
+cd NotYourRegularCompanian-NYRC-
+npm ci
 npm run tauri:dev          # the desktop pet, hot-reloaded
 ```
 
-You need **Node ≥ 20** and **Rust ≥ 1.77**. Tauri builds the Rust backend on
+You need **Node ≥ 22.12** and **Rust ≥ 1.89**. Tauri builds the Rust backend on
 first run (a few minutes); subsequent rebuilds are seconds.
 
 ---
@@ -120,7 +120,7 @@ A `.github/PULL_REQUEST_TEMPLATE.md` is loaded automatically. Fill in:
 
 ## Code review
 
-Every PR runs CI (vitest + cargo test + svelte-check) on Linux runners.
+Every PR runs frontend/security checks and native tests/packages on macOS ARM64/Intel, Windows x64 and Linux x64 runners.
 PRs cannot merge with a red CI.
 
 A maintainer will review within a few days. Reviews focus on:
@@ -145,3 +145,11 @@ diff yourself before submitting.
 
 By contributing you agree your work will be licensed under the project's
 [MIT License](./LICENSE).
+
+## Reproducible release checks and fixtures
+
+Use committed npm/Cargo lockfiles: `npm ci`, `cargo test --lib --locked --manifest-path src-tauri/Cargo.toml`, and `cargo build --locked --manifest-path src-tauri/Cargo.toml`. Run `npm run build`, `npm run version:check`, `npm run audit:identity` and `node --test scripts/release.test.mjs`. Package with `npm run tauri:build -- --ci -- --locked`. Install [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/) first; Linux needs WebKitGTK 4.1, GTK 3, appindicator, OpenSSL and build tools; Windows needs MSVC and WebView2; macOS needs Xcode command-line tools.
+
+Use Settings → Devices for the virtual Body. For loopback fixtures see [BODY-PROTOCOL](docs/BODY-PROTOCOL.md): `node tools/body-client.mjs <port>` reads its token from stdin. The opt-in developer inbox helper is `node tools/developer-event.mjs <NYRC home> developer.tests.failed "fixture failure"`. Use an isolated absolute `NYRC_HOME`, never production storage.
+
+See [release procedure](docs/RELEASE.md) for artifact generation and optional signing. Report native smoke testing separately from unit tests/CI compilation; disclose AI tool/version and any untested external acceptance.

@@ -133,6 +133,20 @@
       refresh = "";
     }
   }
+  async function disconnectCalendar() {
+    error = "";
+    try {
+      await invoke("disconnect_calendar");
+      calendar = { calendarId: "primary", clientId: "", enabled: false };
+      secret = ""; refresh = "";
+      message = "Calendar disconnected; saved credentials removed";
+    } catch { error = "Calendar disconnect was denied or unavailable."; }
+  }
+  async function exportMemories() {
+    error = "";
+    try { message = "Memory export saved: " + await api.exportMemories("json"); }
+    catch { error = "Memory export was denied or unavailable."; }
+  }
   function close() {
     void getCurrentWindow().hide();
   }
@@ -319,6 +333,7 @@
             autocomplete="new-password"
           /></label
         ><button onclick={saveCalendar}>Save Calendar setup</button>
+        <button onclick={disconnectCalendar}>Disconnect and remove credentials</button>
         <p class="muted">
           Ask “what’s tomorrow?” to retrieve events. Use Calendar actions in the
           assistant to review and confirm changes.
@@ -386,6 +401,8 @@
             bind:checked={settings.developerEventLog}
           /></label
         >
+        <button onclick={exportMemories}>Export memories as JSON</button>
+        <p class="muted">For a full reset, remove AI keys and disconnect Calendar, quit NYRC, then back up and move the storage folder shown below.</p>
         <details>
           <summary>Storage and capabilities</summary>
           <pre>{JSON.stringify(diagnostics, null, 2)}</pre>

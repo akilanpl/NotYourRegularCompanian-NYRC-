@@ -1,43 +1,40 @@
 # NYRC — Not Your Regular Companion
 
-A local-first intelligent personal companion for the desktop. It stays alive
-with AI disabled and provides one input for local utilities, reminders, aliases,
-modes, Pocket, clipboard, calendar and developer status. Optional Ollama,
-OpenAI-compatible or Gemini adapters interpret requests through a closed action
-schema; model output cannot choose permissions or execute arbitrary code.
+A local-first desktop companion that stays expressive and useful with AI off. **1.0.0-rc.1 is a release candidate**, not a trusted signed stable release.
+
+The unified assistant handles timers, durable reminders, Pocket notes and links, aliases, modes, clipboard and developer events. Optional Ollama, OpenAI-compatible and Gemini providers propose actions through a closed schema. Google Calendar is optional. Sensitive actions require approval; model output cannot authorize itself. The original SVG character responds to mood, gestures and semantic events.
+
+## Install and run
+
+Download a package for your actual architecture from the release/CI artifacts. Verify its SHA-256 against the accompanying SHA256SUMS file. macOS: unzip and copy NYRC.app to Applications. Windows: run the NSIS installer. Debian/Ubuntu: install the .deb with your package manager. Unsigned candidates may trigger OS publisher warnings; macOS builds are not notarized unless the release evidence explicitly says so. See [platform status](docs/PLATFORMS.md) before relying on platform-specific features.
+
+On first launch, name your companion and choose local-only mode or an optional provider. Timers, reminders and Pocket need no API key. Open Settings to configure AI or Calendar; Advanced contains diagnostics and Devices contains the virtual Body simulator and opt-in authenticated loopback transport.
+
+## Build from source
+
+Use Node >=22.12 and Rust >=1.89 with the platform [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
 ```sh
-npm install
+npm ci
 npm run tauri:dev
+# Packaged release build:
+npm run tauri:build -- --ci -- --locked
 ```
 
-macOS desktop controls are implemented. Windows/Linux report unverified controls
-as unsupported. Settings → Developer contains platform/storage diagnostics, a
-virtual-body simulator and an opt-in authenticated loopback transport for testing
-a thin physical body without hardware. The virtual body displays expression,
-gesture, text, sound, brightness and haptic commands.
+[Contributing](CONTRIBUTING.md) contains checks, fixtures and platform prerequisites. CI installs from committed npm/Cargo lockfiles and builds macOS ARM64/Intel, Windows x64 and Linux x64 packages.
 
-Data lives in the platform local-data directory under `nyrc/nyrc.db`; override
-with `NYRC_HOME`. Existing local data is copied safely on first default launch,
-with the source retained. API/OAuth secrets use the OS credential store.
+## Your data
 
-- [Assistant setup and acceptance](docs/V1-ASSISTANT.md)
+SQLite, memories, reminders, Pocket and settings live in your platform local-data directory under `nyrc`. Secrets use the OS credential store. `NYRC_HOME` selects an isolated absolute directory for testing. Ordinary reinstall/uninstall does not intentionally erase your personal data. Quit before backup. See [storage, backup and reset](docs/STORAGE-MIGRATION.md), [privacy](PRIVACY.md) and [security](SECURITY.md).
+
+## Documentation
+
+- [Release procedure and signing](docs/RELEASE.md)
 - [Architecture](docs/ARCHITECTURE.md)
-- [Storage migration and recovery](docs/STORAGE-MIGRATION.md)
-- [Body protocol and tiny local client](docs/BODY-PROTOCOL.md)
-- [Third-party attribution](THIRD_PARTY_NOTICES.md)
+- [Assistant and provider setup](docs/V1-ASSISTANT.md)
+- [Body protocol](docs/BODY-PROTOCOL.md)
+- [Dependency security review](docs/DEPENDENCY-SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [MIT license](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md)
 
-```sh
-npm run check
-npm test
-npm run build
-cargo test --lib --manifest-path src-tauri/Cargo.toml
-cargo build --manifest-path src-tauri/Cargo.toml
-npm run tauri:build
-```
-
-Cloud/calendar validation requires configured credentials. Disconnected behavior,
-mock calendar and fake local provider transports are covered without credentials.
-Temporary art preserves current desktop functionality; a separate visual redesign
-is still planned. Derived code/assets retain their MIT provenance in LICENSE and
-THIRD_PARTY_NOTICES.md.
+Live cloud/Google acceptance requires real credentials. Physical ESP32 acceptance requires hardware. CI compilation does not establish Windows/Linux desktop UX acceptance. Screenshots and the final release scorecard are recorded in the release validation report.

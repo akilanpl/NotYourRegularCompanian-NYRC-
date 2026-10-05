@@ -91,7 +91,8 @@ fn config(state: &AppState) -> AppResult<CalendarConfig> {
         .unwrap_or_default())
 }
 #[tauri::command]
-pub fn save_calendar_config(
+pub async fn save_calendar_config(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     config: CalendarConfig,
     client_secret: Option<String>,
@@ -105,6 +106,7 @@ pub fn save_calendar_config(
             "invalid calendar configuration".into(),
         ));
     }
+    crate::authority::confirm(app, "calendar.configure", &json!({"name":config.calendar_id})).await?;
     if let Some(s) = client_secret {
         crate::secrets::set("calendar:client_secret", Some(&s))?;
     }
@@ -116,7 +118,8 @@ pub fn save_calendar_config(
         .put_setting("calendar:v1", &serde_json::to_string(&config)?)
 }
 #[tauri::command]
-pub fn disconnect_calendar(state: State<'_, AppState>) -> AppResult<()> {
+pub async fn disconnect_calendar(app: tauri::AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    crate::authority::confirm(app, "calendar.disconnect", &json!({"name":"Remove Calendar credentials and configuration"})).await?;
     crate::secrets::set("calendar:client_secret", None)?;
     crate::secrets::set("calendar:refresh_token", None)?;
     state.db.delete_setting("calendar:v1")

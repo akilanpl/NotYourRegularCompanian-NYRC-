@@ -37,3 +37,16 @@ in deterministic order: create baseline tables/indexes/triggers, add missing
 `last_report_at`, set version, commit. Reopening version 1 does no schema work.
 Future versions are refused. Failed upgrades roll back instead of marking a
 partially upgraded schema as current.
+
+## Locations, backup, reinstall and reset
+
+- macOS: `~/Library/Application Support/nyrc`
+- Windows: `%LOCALAPPDATA%\nyrc`
+- Linux: `${XDG_DATA_HOME:-~/.local/share}/nyrc`
+- An explicit absolute `NYRC_HOME` replaces the default; diagnostics is the authority for the active location.
+
+`nyrc.db` contains memories/interactions, settings, aliases/modes, schedules and Pocket text/link metadata. Pocket files and exports live alongside it in the sandbox. A manual backup must copy the **whole home after quitting NYRC**, including any SQLite WAL/SHM files. Copying only a live database can miss writes. Restore with NYRC closed, preserve a backup of the current home, restore the complete folder at its original location, then launch and check diagnostics/integrity. Do not restore a future-schema database to an older binary.
+
+Replacing/reinstalling the app does not reset storage or rerun completed migration. Removing the macOS .app, Windows installer-managed binaries or Linux package does not intentionally remove the separate local-data home or OS credential entries. A full manual reset is deliberate: remove provider keys in Settings → AI; disconnect Calendar; quit all NYRC instances; back up the home; move the exact home folder aside. Launch to verify fresh onboarding. Moving it aside is reversible; delete the backup only after deciding it is no longer needed. Do not delete a symlink target or a guessed parent directory.
+
+For a complete credential cleanup when the UI cannot start, inspect your OS credential manager for NYRC-owned service `com.nyrc.companion` entries: `cloud_api_key:openai`, `cloud_api_key:gemini`, `calendar:client_secret`, `calendar:refresh_token`. Remove only those entries. Exported copies outside NYRC's home must be removed separately. Memory export is available in Settings → Advanced → Export memories as JSON; Pocket entries and scheduled items have individual deletion controls.

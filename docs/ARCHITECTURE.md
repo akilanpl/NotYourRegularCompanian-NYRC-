@@ -21,7 +21,7 @@ and local-only mode, with credential failures reported by the provider.
 interaction hints, selects semantic reactions and sends capability-filtered
 commands through BodyAdapter. DesktopBodyAdapter feeds CharacterRenderer and
 the generic SpriteRenderer. VirtualBodyAdapter exposes a compact simulator in
-Developer settings. LocalTransportBodyAdapter bridges the authenticated Rust
+Devices settings. LocalTransportBodyAdapter bridges the authenticated Rust
 loopback transport. Multiple body IDs share the host brain; they do not hold
 separate memories or grant permissions. Expression/text cache allows reconnect
 sync without invoking a model; transient sounds/haptics are not replayed.
@@ -35,3 +35,7 @@ the Body API boundary. The product UI uses shared action cards, a local-first on
 Startup storage initialization is asynchronous. A credential-free startup phase
 (preparing/ready/failed) gates mounting service-dependent views. The ready phase
 is published only after AppState is managed and migration has completed.
+
+The assistant router prioritizes deterministic local requests before provider proposals. TaskManager owns immutable action snapshots, permission expiry, cancellation and bounded history. Provider configuration generations invalidate old responses; the personality/reaction layer maps semantic outcomes to expressions without granting authority. Memory is SQLite-backed and extracted through the active provider configuration. Scheduler claims due rows transactionally and recovers triggered entries after restart; this gives durable application state, not guaranteed exactly-once OS notification delivery. Pocket stores text/link metadata in SQLite and files in the path jail. Calendar is a configured optional service outside local-only mode. User state, aliases, modes and onboarding persist independently of AI. Native instance locking prevents a second scheduler for the same home.
+
+Release CI validates lockfiles, tests and native packages on four targets. About/diagnostics report the canonical package version and RC channel. Signing is reported as unverified by runtime rather than guessed; verified distribution state belongs to release evidence.
