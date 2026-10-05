@@ -108,3 +108,9 @@ it("shows storage failure without sensitive diagnostic payloads", () => {
   expect(body).toContain("Existing data has been retained");
   expect(body).not.toContain("storagePath");
 });
+
+it("escapes model and external text through normal Svelte text rendering",async()=>{
+ const {default:ChatBubble}=await import("./ChatBubble.svelte");
+ const {body}=render(ChatBubble,{props:{text:'<script>alert("x")</script><img src=x onerror=alert(1)>',mood:"happy",side:"above"}});
+ expect(body).not.toContain('<script>alert');expect(body).toContain('&lt;script');
+});

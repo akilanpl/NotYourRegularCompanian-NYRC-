@@ -44,6 +44,7 @@ pub async fn send_message(state: State<'_, AppState>, message: String) -> AppRes
     }
 
     let db = state.db.clone();
+    let generation = state.provider_generation.load(std::sync::atomic::Ordering::SeqCst);
     let llm_slot = state.llm.clone();
     let cooldown = state.cooldown.clone();
     let settings = db.clone().run(|db| load_settings_raw(db)).await?;
@@ -92,6 +93,9 @@ pub async fn send_message(state: State<'_, AppState>, message: String) -> AppRes
         }
     }
 
+    if generation != state.provider_generation.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(AppError::LlmUnavailable("Provider changed; retry the request".into()));
+    }
     let snapshot = serde_json::to_string(&pet).ok();
     let new_interaction = NewInteraction {
         event_type: "chat".into(),
@@ -195,6 +199,8 @@ async fn extract_and_store_memories(
         })
         .await?;
 
+    let current = llm_slot.read().clone();
+    if !current.as_ref().is_some_and(|p| Arc::ptr_eq(p, &provider)) || !load_settings_raw(&db)?.memory_enabled { return Ok(()); }
     let parsed: Vec<NewMemory> = match parse_json_array(&resp.text) {
         Some(v) => v,
         None => {

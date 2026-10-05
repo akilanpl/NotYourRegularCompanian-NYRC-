@@ -27,6 +27,13 @@ pub struct PetState {
 }
 
 impl PetState {
+    pub fn normalize(&mut self) {
+        for stat in [&mut self.hunger,&mut self.energy,&mut self.affection,&mut self.boredom,&mut self.curiosity,&mut self.stress,&mut self.trust,&mut self.relationship_level] { *stat = (*stat).clamp(0,100); }
+        self.name = self.name.chars().filter(|c| !c.is_control()).take(40).collect();
+        if self.name.trim().is_empty(){self.name="Companion".into();}
+        self.mood = self.mood.chars().filter(|c|!c.is_control()).take(32).collect();
+        for value in [&mut self.last_interaction_at,&mut self.last_llm_call_at,&mut self.last_report_at] { if value.as_ref().is_some_and(|s|DateTime::parse_from_rfc3339(s).is_err()){*value=None;} }
+    }
     pub fn new(name: impl Into<String>) -> Self {
         let now = Utc::now().to_rfc3339();
         Self {

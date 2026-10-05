@@ -29,23 +29,26 @@ export class TaskManager {
   private readonly tasks = new Map<string, CompanionTask>();
   private readonly listeners = new Set<TaskListener>();
   private nextTaskNumber = 1;
+  private readonly controllers = new Map<string, AbortController>();
 
   constructor(private readonly clock: Clock = () => new Date()) {}
 
   create(input: CreateTaskInput): CompanionTask {
+    if (this.list().filter(t => !["succeeded", "failed", "cancelled"].includes(t.status)).length >= 100) throw new Error("Too many pending tasks");
+    if (input.title.length > 2000 || JSON.stringify(input.action).length > 1048576) throw new Error("Task input too large");
+    const permission = /^(clipboard\.|calendar\.(create|update|delete)$|pocket\.(delete|save_file|export_file)$)/.test(input.action.id) && input.action.permission === "none" ? "confirm" : input.action.permission;
     const now = this.timestamp();
     const task: CompanionTask = {
       ...input,
+      action: immutableCopy({...input.action, permission}),
       id: `task-${this.nextTaskNumber++}`,
       status: "queued",
       createdAt: now,
       updatedAt: now,
       permissionRequest: null,
-      permissionGranted: input.action.permission === "none",
+      permissionGranted: permission === "none",
     };
-    this.tasks.set(task.id, task);
-    this.emit(task);
-    return task;
+    return this.commit(task);
   }
 
   get(taskId: string): CompanionTask | undefined {
@@ -97,6 +100,11 @@ export class TaskManager {
     const task = this.requireTask(taskId);
     if (task.status !== "permission_required" || !task.permissionRequest) {
       throw new Error("Task is not waiting for permission");
+    }
+    const age = this.clock().getTime() - Date.parse(task.permissionRequest.requestedAt);
+    if (!Number.isFinite(age) || age < 0 || age > 300000) {
+      this.fail(taskId, {code:"permission_expired",message:"Approval expired; submit the operation again"});
+      throw new Error("Approval expired");
     }
     return this.commit({
       ...task,
@@ -158,6 +166,8 @@ export class TaskManager {
 
   cancel(taskId: string): CompanionTask {
     const task = this.requireTask(taskId);
+    if (task.status === "cancelled") return task;
+    this.controllers.get(taskId)?.abort();
     return this.commit({
       ...task,
       status: this.transition(task, "cancelled"),
@@ -176,6 +186,8 @@ export class TaskManager {
     }
 
     task = this.updateStatus(taskId, "running");
+    const controller = new AbortController();
+    this.controllers.set(taskId, controller);
     try {
       if (!(await executor.canExecute(task.action))) {
         const current = this.requireTask(taskId);
@@ -186,7 +198,7 @@ export class TaskManager {
         });
       }
       if (this.requireTask(taskId).status !== "running") return this.requireTask(taskId);
-      const result = await executor.execute(task.action);
+      const result = await executor.execute(task.action, controller.signal);
       if (this.requireTask(taskId).status !== "running") return this.requireTask(taskId);
       return result.ok
         ? this.complete(taskId, result.data)
@@ -198,6 +210,8 @@ export class TaskManager {
         code: "execution_failed",
         message: error instanceof Error ? error.message : "Action execution failed",
       });
+    } finally {
+      this.controllers.delete(taskId);
     }
   }
 
@@ -212,7 +226,11 @@ export class TaskManager {
   }
 
   private commit(task: CompanionTask): CompanionTask {
+    task = immutableCopy(task);
     this.tasks.set(task.id, task);
+    // Retain active operations, but bound completed history in long-running sessions.
+    const terminal = [...this.tasks.values()].filter(t => ["succeeded", "failed", "cancelled"].includes(t.status));
+    for (const old of terminal.slice(0, Math.max(0, terminal.length - 200))) this.tasks.delete(old.id);
     this.emit(task);
     return task;
   }
@@ -237,4 +255,16 @@ export class TaskManager {
     }
     return status;
   }
+}
+
+function immutableCopy<T>(value: T): T {
+  const copy = structuredClone(value);
+  function freeze(v: unknown) {
+    if (v && typeof v === "object") {
+      Object.values(v).forEach(freeze);
+      Object.freeze(v);
+    }
+  }
+  freeze(copy);
+  return copy;
 }

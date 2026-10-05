@@ -6,7 +6,7 @@
   import {emit} from "../bridge/tauri";
   import {isCompanionExpression} from "../character/expression";
   import { onMount, onDestroy } from "svelte";
-  import {coalesceNotices,type Notice} from "../product/presentation";
+  import {NoticeQueue} from "../product/noticeQueue";
   import CharacterRenderer from "./CharacterRenderer.svelte";
   import ChatBubble from "./ChatBubble.svelte";
   import InboxConsent from "./InboxConsent.svelte";
@@ -115,6 +115,7 @@
   let unlistenDeveloper: (() => void) | undefined;
   let focusSession = false;
   const unsubscribeAssistant = assistantRuntime.tasks.subscribe(({task,reaction}) => {
+    latestUtilityTask = task;
     setCharacterReaction(reaction);
     if(task.status === "succeeded" && task.action.id === "mode.activate") focusSession = /study|focus|work/i.test(String((task.action.payload as {name:string}).name));
   });
@@ -662,25 +663,22 @@
     }
   }
 
-  let noticeHistory: Notice[] = [];
-  let activeNoticePriority = 0;
-  function flashBubble(text: string, ms = 5_000) {
-    text = text.replace(/[\p{Extended_Pictographic}\uFE0F♡♥]/gu, "").replace(/Yay!?/gi,"Done.");
+  const noticeQueue = new NoticeQueue();
+  function showNotice() {
+    const notice = noticeQueue.active;
+    if(bubbleTimer)clearTimeout(bubbleTimer);
+    if(!notice){bubbleOpen=false;return;}
+    bubbleText=notice.message;bubbleOpen=true;
+    bubbleTimer=setTimeout(dismissNotice,notice.priority>=3?15000:5000);
+  }
+  function dismissNotice(){noticeQueue.dismiss();showNotice();}
+  function flashBubble(text: string, _ms = 5_000, key = text) {
+    text=text.slice(0,1000).replace(/[\p{Extended_Pictographic}\uFE0F♡♥]/gu, "").replace(/Yay!?/gi,"Done.");
     if(!text.trim())return;
     const priority=/timer complete|reminder|alarm/i.test(text)?3:/permission|build|calendar/i.test(text)?2:1;
-    noticeHistory=coalesceNotices(noticeHistory,{key:text,message:text,priority,at:Date.now()});
-    if(bubbleOpen && priority<activeNoticePriority)return;
-    activeNoticePriority=priority;
-    if(priority===3)ms=Math.max(ms,15000);
-    if (bubbleOpen && bubbleText === text) return;
-    if (bubbleTimer) clearTimeout(bubbleTimer);
-    bubbleText = text;
-    bubbleOpen = true;
-    bubbleTimer = setTimeout(() => {
-      bubbleOpen = false;
-      activeNoticePriority = 0;
-      bubbleTimer = undefined;
-    }, ms);
+    const previous=noticeQueue.active;
+    noticeQueue.push({key,message:text,priority,at:Date.now()});
+    if(previous!==noticeQueue.active)showNotice();
   }
 
   function clampIntensity(n: number): number {
@@ -1395,8 +1393,10 @@
     }
   }
 
+  let hitTestPending = false;
   async function hitTestTick() {
-    if (!api.hasBackend || destroyed) return;
+    if (!api.hasBackend || destroyed || document.hidden || hitTestPending) return;
+    hitTestPending = true;
     try {
       const cp = await cursorPosition();
       const w = getCurrentWindow();
@@ -1424,12 +1424,12 @@
         lx >= 0 && ly >= 0 &&
         lx <= viewportSize.width && ly <= viewportSize.height
       ) {
-        cursor = { x: lx, y: ly };
+        if(cursor.x !== lx || cursor.y !== ly) cursor = { x: lx, y: ly };
       }
       void applyClickThrough(!isInsideInteractive(lx, ly));
     } catch {
       // Tauri call failed (window closed, etc.); leave state untouched.
-    }
+    } finally { hitTestPending = false; }
   }
 
   onMount(async () => {
@@ -1461,7 +1461,7 @@
       activeTimers = utilityRuntime.timers.list();
       latestUtilityTask = utilityRuntime.tasks.list().at(-1) ?? latestUtilityTask;
       setCharacterReaction(reaction);
-      flashBubble(`Timer complete: ${timer.label}`, 6_000);
+      flashBubble(`Timer complete: ${timer.label}`, 6_000, `timer:${timer.id}`);
     });
     unsubscribeScheduledTasks = schedulerRuntime.subscribeTasks(({ task, reaction }) => {
       latestUtilityTask = task;
@@ -1477,7 +1477,7 @@
       setCharacterReaction(reaction);
       const label = item.kind === "alarm" ? "Alarm" :
         item.kind === "important_date" ? "Important date" : "Reminder";
-      flashBubble(`${label}: ${item.title}`, 8_000);
+      flashBubble(`${label}: ${item.title}`, 8_000, `scheduled:${item.id}:${item.triggeredAt}`);
       void sendScheduledNotification(
         item.kind === "alarm" ? "NYRC alarm" :
           item.kind === "important_date" ? "NYRC important date" : "NYRC reminder",
@@ -1794,7 +1794,7 @@
       data-side={bubblePlacement.side}
     >
       <ChatBubble text={bubbleText} mood={pet.mood} side={bubblePlacement.side} />
-      <button class="notice-dismiss" aria-label="Dismiss notification" onclick={()=>{bubbleOpen=false;activeNoticePriority=0;if(bubbleTimer)clearTimeout(bubbleTimer);}}>Dismiss</button>
+      <button class="notice-dismiss" aria-label="Dismiss notification" onclick={dismissNotice}>Dismiss</button>
     </div>
   {/if}
 

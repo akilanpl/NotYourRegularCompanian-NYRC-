@@ -26,3 +26,25 @@ describe("transport-safe body domain",()=>{
   await core.disconnect("virtual");core.react(reactionsFor("task_succeeded")[0]);await core.connect(virtual);expect(virtual.commands.at(-1)?.payload.id).toBe("success");
  });
 });
+
+describe("body race hardening",()=>{
+ it("invalidates delayed shake reactions when a newer task state arrives",async()=>{
+  vi.useFakeTimers(); const core=new BodyCore(),body=new VirtualBodyAdapter();await core.connect(body);
+  body.simulate("shake");core.react({expression:"success",intensity:.8,durationMs:10000});
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(body.commands.filter(c=>c.type==="expression").at(-1)?.payload.id).toBe("success");
+  core.dispose();await vi.advanceTimersByTimeAsync(20000);expect(body.simulate("touch")).toBe(false);vi.useRealTimers();
+ });
+ it("survives 200 reconnect cycles without duplicated input subscriptions",async()=>{
+  const core=new BodyCore(),body=new VirtualBodyAdapter(),observer=vi.fn();core.observe(observer);
+  for(let i=0;i<200;i++){await core.connect(body);body.simulate("touch");await core.disconnect(body.bodyId);}
+  expect(observer).toHaveBeenCalledTimes(200);expect(core.diagnostics()).toHaveLength(1);core.dispose();
+ });
+});
+
+it("disconnect during asynchronous handshake cannot resurrect a body",async()=>{
+ const core=new BodyCore(),body=new VirtualBodyAdapter();let complete!:()=>void;
+ body.connect=async()=>{await new Promise<void>(resolve=>complete=resolve);body.connected=true;};
+ const connecting=core.connect(body);await Promise.resolve();await core.disconnect(body.bodyId);complete();await connecting;
+ expect(core.diagnostics().some(s=>s.connected)).toBe(false);expect(body.connected).toBe(false);core.dispose();
+});

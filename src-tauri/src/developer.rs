@@ -73,6 +73,7 @@ pub fn ingest(app: &tauri::AppHandle, name: &str) {
         if event.kind.ends_with("failed") {
             state.db.put_setting("developer:last_failure", &raw)?;
         }
+        if !state.cooldown.try_acquire("developer:presentation", std::time::Duration::from_millis(250)) { return Ok(()); }
         app.emit("developer:event", &event)
             .map_err(|_| AppError::Internal("event delivery failed".into()))?;
         Ok(())

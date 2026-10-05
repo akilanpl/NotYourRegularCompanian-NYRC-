@@ -1,6 +1,6 @@
 <script lang="ts">
   import PocketTray from "./PocketTray.svelte";
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, tick } from "svelte";
   import type { AssistantRuntime } from "../assistant/runtime";
   import { taskMessage } from "../assistant/runtime";
   import type { Entities } from "../assistant/router";
@@ -57,8 +57,13 @@
   onMount(() => {
     field?.focus();
     tasks = runtime.tasks.list();
-    return runtime.tasks.subscribe(() => (tasks = runtime.tasks.list()));
+    const off = runtime.tasks.subscribe(() => (tasks = runtime.tasks.list()));
+    return () => {off(); for(const task of runtime.tasks.list()) if(["queued", "running", "permission_required", "waiting_for_user"].includes(task.status)) runtime.tasks.cancel(task.id);};
   });
+  async function restoreInputFocus() {
+    await tick();
+    if (!pending.length && field?.isConnected) field.focus();
+  }
   async function submit(value = input) {
     if (busy || !value.trim()) return;
     input = "";
@@ -74,7 +79,7 @@
       response = "Couldn’t complete that. Local commands are still available.";
     } finally {
       busy = false;
-      field?.focus();
+      await restoreInputFocus();
     }
   }
   async function action(
@@ -94,6 +99,7 @@
       response = "Couldn’t complete that action.";
     } finally {
       busy = false;
+      await restoreInputFocus();
     }
   }
   async function permission(t: CompanionTask, allow: boolean) {
@@ -103,8 +109,11 @@
       response = !allow ? "Action denied." : taskMessage(task);
       result = task.result;
       onResult(task);
+    } catch {
+      response = "This request is no longer waiting for permission.";
     } finally {
       busy = false;
+      await restoreInputFocus();
     }
   }
   async function pocket() {
@@ -205,6 +214,9 @@
     </p>{/if}
   {#if request}<p class="request">{request}</p>{/if}
   <div class="response" role="status" aria-live="polite">{response}</div>
+  {#each tasks.filter(t => t.status === "running") as task (task.id)}
+    <button onclick={() => runtime.tasks.cancel(task.id)}>Cancel {task.title.slice(0,80)}</button>
+  {/each}
   {#each pending as task (task.id)}<section
       tabindex="-1"
       class="permission"
@@ -232,7 +244,7 @@
       >Today</button
     ><button onclick={() => calendar(true)}>Tomorrow</button>
   </nav>
-  {#if view === "Pocket"}<PocketTray {runtime} />
+  {#if view === "Pocket"}<PocketTray {runtime} showPermission={false} />
   {:else if view === "Calendar"}{#each items as item}<article class="item">
         <strong>{item.title}</strong><small
           >{item.start ? new Date(item.start).toLocaleString() : ""}</small

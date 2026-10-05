@@ -13,6 +13,7 @@ pub fn ensure_pet_home(root: &Path) -> AppResult<PathBuf> {
     for sub in ["inbox", "notes", "dreams", "exports"] {
         validate_storage_path(&root.join(sub))?;
         std::fs::create_dir_all(root.join(sub))?;
+        secure_storage_directory(&root.join(sub))?;
     }
     Ok(root.to_path_buf())
 }
@@ -261,15 +262,23 @@ fn write_in_subdir(
     file_name: &str,
     content: &str,
 ) -> AppResult<PathBuf> {
-    if file_name.contains('/') || file_name.contains('\\') || file_name.contains("..") {
-        return Err(AppError::Permission(format!(
-            "invalid file name: {file_name}"
-        )));
+    if file_name.is_empty() || file_name.len() > 200 || file_name.chars().any(|c| c.is_control() || "/\\:".contains(c)) || file_name.contains("..") || content.len() > 4_194_304 {
+        return Err(AppError::Permission("invalid sandbox write".into()));
     }
     let dir = home.join(subdir);
+    validate_storage_path(&dir)?;
     std::fs::create_dir_all(&dir)?;
     let target = dir.join(file_name);
-    std::fs::write(&target, content)?;
+    validate_storage_path(&target)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)] {use std::os::unix::fs::OpenOptionsExt;options.mode(0o600).custom_flags(libc_o_nofollow());}
+    #[cfg(windows)] {use std::os::windows::fs::OpenOptionsExt;options.custom_flags(0x0020_0000);}
+    use std::io::Write;
+    let mut file = options.open(&target)?;
+    if !file.metadata()?.is_file(){return Err(AppError::Permission("not a regular sandbox file".into()));}
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
     Ok(target)
 }
 
@@ -516,10 +525,10 @@ pub fn export_pocket_file(home: &Path, name: &str, bytes: &[u8]) -> AppResult<()
         return Err(AppError::Permission("unsafe Pocket export".into()));
     }
     let exports = validate_within(home, &home.join("exports"))?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(exports.join(name))?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)] {use std::os::unix::fs::OpenOptionsExt; options.mode(0o600);}
+    let mut file = options.open(exports.join(name))?;
     file.write_all(bytes)?;
     file.sync_all()?;
     Ok(())
@@ -596,4 +605,29 @@ pub fn publish_storage(stage: &Path,destination: &Path) -> AppResult<()> {
 pub fn secure_storage_directory(path:&Path)->AppResult<()> {
     #[cfg(unix)] {use std::os::unix::fs::PermissionsExt;std::fs::set_permissions(path,std::fs::Permissions::from_mode(0o700))?;}
     Ok(())
+}
+
+#[cfg(test)] mod stress_security_tests {
+    use super::*;
+    #[test] fn pocket_filename_and_size_boundary_matrix() {
+        let d=tempfile::tempdir().unwrap();let root=d.path().canonicalize().unwrap();ensure_pet_home(&root).unwrap();
+        for name in ["../x","/etc/passwd","nested/x","a:b","..\\x","\u{0000}","."] {assert!(read_pocket_file(&root,name,1024).is_err());}
+        for (name,size,ok) in [("zero.bin",0,true),("exact.bin",1024,true),("large.bin",1025,false),("日本語.bin",10,true)] {
+            std::fs::write(root.join("inbox").join(name),vec![0;size]).unwrap();assert_eq!(read_pocket_file(&root,name,1024).is_ok(),ok);
+        }
+        export_pocket_file(&root,"unique.bin",b"content").unwrap();assert!(export_pocket_file(&root,"unique.bin",b"overwrite").is_err());assert_eq!(std::fs::read(root.join("exports/unique.bin")).unwrap(),b"content");
+    }
+    #[cfg(unix)] #[test] fn nested_symlinks_and_private_exports() {
+        use std::os::unix::fs::{symlink,PermissionsExt};let d=tempfile::tempdir().unwrap();let root=d.path().canonicalize().unwrap();ensure_pet_home(&root).unwrap();
+        std::fs::write(root.join("private"),"secret").unwrap();symlink(root.join("private"),root.join("inbox/first")).unwrap();symlink(root.join("inbox/first"),root.join("inbox/second")).unwrap();assert!(read_pocket_file(&root,"second",1024).is_err());
+        export_pocket_file(&root,"private.bin",b"content").unwrap();assert_eq!(std::fs::metadata(root.join("exports/private.bin")).unwrap().permissions().mode()&0o777,0o600);
+    }
+}
+
+#[cfg(all(test, unix))] mod write_jail_tests {
+    use super::*;
+    #[test] fn note_symlink_cannot_overwrite_external_file() {
+        let d=tempfile::tempdir().unwrap();let root=d.path().canonicalize().unwrap();let home=root.join("home");ensure_pet_home(&home).unwrap();let outside=root.join("private");std::fs::write(&outside,"retained").unwrap();
+        std::os::unix::fs::symlink(&outside,home.join("notes/redirect.md")).unwrap();assert!(write_note(&home,"redirect.md","attack").is_err());assert_eq!(std::fs::read_to_string(outside).unwrap(),"retained");
+    }
 }

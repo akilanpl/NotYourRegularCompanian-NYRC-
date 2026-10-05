@@ -383,7 +383,7 @@
             type="checkbox"
             bind:checked={settings.developerEventLog}
           /></label
-        ><BodyDiagnostics />
+        >
         <details>
           <summary>Storage and capabilities</summary>
           <pre>{JSON.stringify(diagnostics, null, 2)}</pre>

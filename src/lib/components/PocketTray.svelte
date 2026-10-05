@@ -6,7 +6,8 @@
   import type { CompanionTask } from "../tasks/task";
   let {
     runtime = new AssistantRuntime(new TimerService()),
-  }: { runtime?: AssistantRuntime } = $props();
+    showPermission = true,
+  }: { runtime?: AssistantRuntime; showPermission?: boolean } = $props();
   type Item = {
     id: string;
     title: string;
@@ -32,6 +33,10 @@
   }
   onMount(() => {
     void load();
+    const off = runtime.tasks.subscribe(({task}) => {
+      if(pending?.id === task.id && ["succeeded", "failed", "cancelled"].includes(task.status)) {pending=null;response=taskMessage(task);void load();}
+    });
+    return () => {off();if(pending)runtime.tasks.cancel(pending.id);};
   });
   async function action(
     id: CompanionAction["id"],
@@ -84,7 +89,7 @@
       placeholder="Find saved items"
     /></label
   >
-  {#if pending}<div class="card">
+  {#if pending && showPermission}<div class="card">
       <strong>{pending.title}?</strong>
       <p class="muted">
         {pending.action.id === "clipboard.to_pocket"

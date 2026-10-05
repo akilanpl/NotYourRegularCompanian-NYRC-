@@ -13,6 +13,8 @@ pub mod legacy_migration;
 pub mod platform;
 pub mod body;
 pub mod startup;
+pub mod authority;
+pub mod instance;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -31,6 +33,7 @@ pub fn run() {
     let _ = env_logger::try_init();
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(body::BodyTransportState::default())
         .manage(startup::StartupState::default())
         .setup(|app| {
@@ -84,6 +87,7 @@ pub fn run() {
             commands::send_message,
             commands::assistant_interpret,
             commands::assistant_service,
+            commands::cancel_assistant_service,
             commands::set_pocket_limit,
             commands::autonomous_speak,
             commands::list_inbox_files,
@@ -139,6 +143,8 @@ fn initialize_storage(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::
     }
     sandbox::validate_storage_path(&pet_home)?;
     ensure_pet_home(&pet_home)?;
+    let instance = instance::InstanceGuard::acquire(&pet_home)?;
+    app.manage(instance);
     let db_path = pet_home.join(DB_FILE);
     let db = Arc::new(Db::open(&db_path)?);
 

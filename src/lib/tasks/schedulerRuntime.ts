@@ -68,6 +68,7 @@ export class SchedulerRuntime {
   private started = false;
   private disposed = false;
   private claimingDue = false;
+  private refreshGeneration = 0;
 
   constructor(
     private readonly backend: SchedulerBackend & {
@@ -168,6 +169,7 @@ export class SchedulerRuntime {
     try {
       const now = this.clock().toISOString();
       const due = await this.backend.claimDueScheduledItems(now);
+      if (this.disposed) return;
       for (const item of due) this.emitDue(item);
       await this.refresh();
     } finally {
@@ -177,7 +179,10 @@ export class SchedulerRuntime {
   }
 
   async refresh(): Promise<void> {
-    this.items = await this.backend.listScheduledItems();
+    const generation = ++this.refreshGeneration;
+    const items = await this.backend.listScheduledItems();
+    if (this.disposed || generation !== this.refreshGeneration) return;
+    this.items = items;
     for (const listener of this.listeners) {
       try {
         listener([...this.items]);
@@ -201,7 +206,7 @@ export class SchedulerRuntime {
       }, null);
     if (next === null) return;
     const delay = Math.min(
-      MAX_TIMEOUT_MS,
+      Math.min(MAX_TIMEOUT_MS, RETRY_MS),
       Math.max(0, next - this.clock().getTime()),
     );
     this.cancelWake = this.scheduleWake(() => {

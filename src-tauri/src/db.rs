@@ -379,7 +379,12 @@ fn map_assistant_mode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssistantMode
 
 impl Db {
     pub fn claim_developer_event(&self,id:&str)->AppResult<bool> {
-        Ok(self.conn.lock().execute("INSERT OR IGNORE INTO developer_events(id) VALUES (?1)",[id])? == 1)
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction()?;
+        let changed = tx.execute("INSERT OR IGNORE INTO developer_events(id) VALUES (?1)",[id])? == 1;
+        tx.execute("DELETE FROM developer_events WHERE rowid NOT IN (SELECT rowid FROM developer_events ORDER BY rowid DESC LIMIT 10000)", [])?;
+        tx.commit()?;
+        Ok(changed)
     }
 
     pub fn save_pocket_item(&self, item: &crate::commands::PocketItem) -> AppResult<()> {
@@ -402,7 +407,13 @@ impl Db {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        if path.exists() && std::fs::metadata(path)?.permissions().readonly() { return Err(AppError::Permission("Database is read-only".into())); }
         let mut conn = Connection::open_with_flags(path,rusqlite::OpenFlags::default() | rusqlite::OpenFlags::SQLITE_OPEN_NOFOLLOW)?;
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         migrate_schema(&mut conn)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
         Ok(Self {
@@ -434,6 +445,9 @@ impl Db {
 
     // ------- Pet state -------
     pub fn save_pet_state(&self, state: &PetState) -> AppResult<()> {
+        let mut normalized = state.clone();
+        normalized.normalize();
+        let state = &normalized;
         let conn = self.conn.lock();
         // REQ-102 — `last_report_at` is monotonic. The pet window's debounced
         // save can carry a watermark that predates a report just written by
@@ -526,11 +540,14 @@ impl Db {
                 },
             )
             .optional()?;
-        Ok(res)
+        Ok(res.map(|mut state| {state.normalize();state}))
     }
 
     // ------- Memories -------
     pub fn create_memory(&self, mem: NewMemory) -> AppResult<Memory> {
+        if mem.content.trim().is_empty() || mem.content.len() > 4000 || mem.r#type.len() > 40 || mem.importance.is_some_and(|v| !(1..=10).contains(&v)) || mem.confidence.is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v)) {
+            return Err(AppError::InvalidInput("invalid memory bounds".into()));
+        }
         let id = Uuid::new_v4().to_string();
         let now = now_rfc3339();
         let importance = mem.importance.unwrap_or(1);
@@ -2248,5 +2265,42 @@ mod tests {
         let rows = db.list_skills().expect("loader must not error");
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "Notes");
+    }
+}
+
+#[cfg(test)] mod hardening_stress_tests {
+    use super::*;
+    #[test] fn independent_connections_claim_500_overdue_items_once_under_contention() {
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().canonicalize().unwrap().join("stress.db");let db=Db::open(&path).unwrap();
+        for i in 0..500 {db.create_scheduled_item(NewScheduledItem{kind:ScheduledItemKind::Reminder,title:format!("item {i}"),message:None,scheduled_at:"2026-10-05T00:00:00Z".into(),timezone:None,recurrence:None,metadata:None}).unwrap();}
+        let barrier=Arc::new(std::sync::Barrier::new(4));let mut handles=Vec::new();
+        for _ in 0..4 {let db=Db::open(&path).unwrap();let barrier=barrier.clone();handles.push(std::thread::spawn(move||{barrier.wait();db.claim_due_scheduled_items("2026-10-06T00:00:00.000Z").unwrap()}));}
+        let results:Vec<_>=handles.into_iter().flat_map(|h|h.join().unwrap()).collect();assert_eq!(results.len(),500);
+        let ids:std::collections::HashSet<_>=results.iter().map(|v|&v.id).collect();assert_eq!(ids.len(),500);
+        assert!(Db::open(&path).unwrap().claim_due_scheduled_items("2026-10-07T00:00:00.000Z").unwrap().is_empty());
+    }
+    #[test] fn rollback_and_mixed_writes_preserve_durable_state() {
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().canonicalize().unwrap().join("mixed.db");let db=Db::open(&path).unwrap();
+        {let mut conn=db.conn.lock();let tx=conn.transaction().unwrap();tx.execute("INSERT INTO settings(key,value,updated_at) VALUES('interrupted','never committed','2026-10-05T00:00:00Z')",[]).unwrap();}
+        assert!(db.get_setting("interrupted").unwrap().is_none());
+        let mut handles=Vec::new();for worker in 0..4 {let db=Db::open(&path).unwrap();handles.push(std::thread::spawn(move||{for i in 0..100 {crate::commands::save_pocket(&db,"text",&format!("{worker}-{i}"),"x".repeat(1024),1024).unwrap();db.put_setting(&format!("worker:{worker}"),&i.to_string()).unwrap();db.create_memory(NewMemory{r#type:"note".into(),content:format!("{worker}-{i}"),importance:None,confidence:None,source_interaction_id:None}).unwrap();}}));}for h in handles{h.join().unwrap();}
+        drop(db);let db=Db::open(&path).unwrap();for worker in 0..4{assert_eq!(db.get_setting(&format!("worker:{worker}")).unwrap().as_deref(),Some("99"));}assert_eq!(db.list_memories(1000).unwrap().len(),400);assert_eq!(db.list_pocket_items().unwrap().len(),100);
+    }
+    #[test] fn malformed_json_returns_error_without_poisoning_connection() {
+        let db=Db::open_in_memory().unwrap();db.conn.lock().execute("INSERT INTO pocket(id,item_json) VALUES('bad','not json')",[]).unwrap();assert!(db.list_pocket_items().is_err());db.delete_pocket_item("bad").unwrap();assert!(db.list_pocket_items().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)] mod failure_boundary_tests {
+    use super::*;
+    #[test] fn externally_reachable_integer_extremes_are_normalized_before_arithmetic() {
+        let db=Db::open_in_memory().unwrap();let mut pet=PetState::new("x".repeat(500));pet.affection=i32::MAX;pet.boredom=i32::MIN;pet.last_interaction_at=Some("bad".into());db.save_pet_state(&pet).unwrap();let pet=db.load_pet_state("default").unwrap().unwrap();assert_eq!(pet.affection,100);assert_eq!(pet.boredom,0);assert_eq!(pet.name.len(),40);assert!(pet.last_interaction_at.is_none());assert_eq!(pet.affection+1,101);
+    }
+    #[test] fn busy_database_waits_for_transaction_then_succeeds() {
+        let d=tempfile::tempdir().unwrap();let path=d.path().canonicalize().unwrap().join("busy.db");let db=Db::open(&path).unwrap();let other=Db::open(&path).unwrap();
+        let mut connection=db.conn.lock();let transaction=connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).unwrap();let handle=std::thread::spawn(move||other.put_setting("after-lock","durable"));std::thread::sleep(std::time::Duration::from_millis(100));transaction.commit().unwrap();drop(connection);handle.join().unwrap().unwrap();assert_eq!(db.get_setting("after-lock").unwrap().as_deref(),Some("durable"));
+    }
+    #[cfg(unix)] #[test] fn read_only_storage_is_not_silently_made_writable() {
+        use std::os::unix::fs::PermissionsExt;let d=tempfile::tempdir().unwrap();let path=d.path().canonicalize().unwrap().join("read-only.db");drop(Db::open(&path).unwrap());std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o400)).unwrap();assert!(Db::open(&path).is_err());assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode()&0o777,0o400);
     }
 }

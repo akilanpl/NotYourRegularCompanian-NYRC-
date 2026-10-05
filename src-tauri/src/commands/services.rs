@@ -69,16 +69,39 @@ pub fn save_pocket(
     Ok(item)
 }
 #[tauri::command]
+pub fn cancel_assistant_service(state: State<'_, AppState>, request_id: String) {
+    if let Some(cancel) = state.service_requests.lock().get(&request_id) { let _ = cancel.send(true); }
+}
+#[tauri::command]
 pub async fn assistant_service(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     action: String,
     payload: Value,
+    request_id: Option<String>,
 ) -> AppResult<Value> {
+    let id = request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    uuid::Uuid::parse_str(&id).map_err(|_| AppError::InvalidInput("invalid request ID".into()))?;
+    let (cancel, mut cancelled) = tokio::sync::watch::channel(false);
+    {
+        let mut active = state.service_requests.lock();
+        if active.len() >= 16 || active.contains_key(&id) { return Err(AppError::Permission("Service busy or duplicate request".into())); }
+        active.insert(id.clone(), cancel);
+    }
+    let result = tokio::select! {
+        result = run_service(app, &state, action, payload) => result,
+        _ = cancelled.changed() => Err(AppError::Permission("Action cancelled".into())),
+    };
+    state.service_requests.lock().remove(&id);
+    result
+}
+async fn run_service(app: tauri::AppHandle, state: &AppState, action: String, payload: Value) -> AppResult<Value> {
     if serde_json::to_vec(&payload)?.len() > 1_048_576 {
         return Err(AppError::InvalidInput("payload too large".into()));
     }
+    crate::authority::confirm(app, &action, &payload).await?;
     if action.starts_with("calendar.") {
-        return super::calendar::calendar_action(&state, &action, &payload).await;
+        return super::calendar::calendar_action(state, &action, &payload).await;
     }
     match action.as_str() {
         "pocket.save_text" | "pocket.save_url" => {
@@ -221,6 +244,7 @@ pub async fn assistant_interpret(state: State<'_, AppState>, input: String) -> A
             "wait a moment before trying again".into(),
         ));
     }
+    let generation = state.provider_generation.load(std::sync::atomic::Ordering::SeqCst);
     let provider = state
         .llm
         .read()
@@ -248,6 +272,9 @@ pub async fn assistant_interpret(state: State<'_, AppState>, input: String) -> A
             max_tokens: Some(800),
         })
         .await?;
+    if generation != state.provider_generation.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(AppError::LlmUnavailable("Provider changed; retry the request".into()));
+    }
     serde_json::from_str(&r.text)
         .map_err(|_| AppError::InvalidInput("malformed AI proposal".into()))
 }

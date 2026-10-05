@@ -439,3 +439,9 @@ describe("roundStats (persistence boundary)", () => {
     expect(r.name).toBe(s.name);
   });
 });
+
+it("keeps three accelerated days of simulation bounded and finite",()=>{
+ let state=newPetState();
+ for(let i=0;i<86400;i++)state=runTick(state,{...ctx,timeOfDay:i%28800>22000?"night":"afternoon"},3);
+ for(const key of ["hunger","energy","affection","boredom","curiosity","stress","trust"] as const){expect(Number.isFinite(state[key])).toBe(true);expect(state[key]).toBeGreaterThanOrEqual(0);expect(state[key]).toBeLessThanOrEqual(100);}
+});

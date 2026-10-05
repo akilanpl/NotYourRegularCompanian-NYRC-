@@ -14,7 +14,8 @@ export type TimerCompletionListener = (timer: TimerSnapshot) => void;
 export type TimerServiceErrorCode =
   | "invalid_duration"
   | "timer_not_found"
-  | "timer_not_active";
+  | "timer_not_active"
+  | "timer_limit";
 
 export class TimerServiceError extends Error {
   constructor(
@@ -71,6 +72,9 @@ export class TimerService {
       );
     }
 
+    if ([...this.timers.values()].filter(t => t.status === "running").length >= 100) throw new TimerServiceError("timer_limit", "At most 100 active timers are supported");
+    const terminal = [...this.timers.values()].filter(t => t.status !== "running");
+    for (const timer of terminal.slice(0, Math.max(0, terminal.length - 99))) this.timers.delete(timer.id);
     const createdAtMs = this.now();
     const id = `timer-${this.nextId++}`;
     const entry: TimerEntry = {
@@ -123,6 +127,7 @@ export class TimerService {
         timer.cancelSchedule?.();
       }
     }
+    for (const timer of this.timers.values()) if (timer.status === "running") timer.status = "cancelled";
     this.timers.clear();
     this.listeners.clear();
   }

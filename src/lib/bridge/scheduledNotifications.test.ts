@@ -74,3 +74,8 @@ describe("scheduled notification permission", () => {
     expect(requested).toBe(false);
   });
 });
+
+it("bounds concurrent notification storms without requesting authority",async()=>{
+ const send=vi.fn();const service=createScheduledNotifications(adapter({granted:true,send}),()=>1000);
+ await Promise.all(Array.from({length:100},()=>service.send("NYRC","Reminder")));expect(send).toHaveBeenCalledTimes(3);
+});

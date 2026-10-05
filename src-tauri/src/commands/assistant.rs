@@ -158,6 +158,9 @@ fn validate_mode(mode: ModeInput) -> AppResult<NewAssistantMode> {
             "Mode requires a name and at most 20 actions".into(),
         ));
     }
+    if serde_json::to_vec(&mode.actions)?.len() > 16384 {
+        return Err(crate::error::AppError::InvalidInput("Mode actions too large".into()));
+    }
     Ok(NewAssistantMode {
         name: name.to_string(),
         actions: mode.actions,

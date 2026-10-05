@@ -51,6 +51,7 @@ impl CloudProvider {
         {
             return Err(AppError::InvalidInput("invalid provider or model".into()));
         }
+        if kind == "gemini" && (model.contains("/") || model.contains(":") || model == "." || model == "..") { return Err(AppError::InvalidInput("invalid Gemini model".into())); }
         if kind == "gemini" && endpoint != "https://generativelanguage.googleapis.com/v1beta" {
             return Err(AppError::InvalidInput(
                 "Gemini uses its official endpoint".into(),
@@ -124,11 +125,19 @@ impl LlmProvider for CloudProvider {
             }
             let v = bounded_json(r).await?;
             Ok(LlmResponse {
-                text: response_text(&self.kind, &v)?,
+                text: redact_secret(&response_text(&self.kind, &v)?, &self.key),
                 model: self.model.clone(),
             })
         })
     }
+}
+fn redact_secret(text: &str, secret: &str) -> String {
+    if secret.len() < 8 { return text.to_owned(); }
+    let mut text = text.replace(secret, "[redacted]");
+    let prefix: String = secret.chars().take(12).collect();
+    let suffix: String = secret.chars().rev().take(12).collect::<String>().chars().rev().collect();
+    for part in [prefix, suffix] { if part.len() >= 8 {text = text.replace(&part, "[redacted]");} }
+    text
 }
 /// Bound streamed response bytes even if the server omits Content-Length.
 pub async fn bounded_json(mut r: reqwest::Response) -> AppResult<Value> {
@@ -270,5 +279,32 @@ mod transport_tests {
             .to_string();
         assert!(e.contains("network failure"));
         assert!(!e.contains("test-only-key"));
+    }
+}
+
+#[cfg(test)] mod hardening_matrix {
+    use super::*;
+    use std::io::{Read,Write};
+    const SECRET:&str="NYRC_TEST_SECRET_DO_NOT_LEAK_123";
+    fn serve(status:u16,body:String,delay:u64)->(String,std::thread::JoinHandle<()>) {
+        let listener=std::net::TcpListener::bind("127.0.0.1:0").unwrap();let url=format!("http://{}/v1",listener.local_addr().unwrap());
+        let handle=std::thread::spawn(move||{let (mut stream,_)=listener.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();let mut request=[0;8192];let _=stream.read(&mut request);std::thread::sleep(Duration::from_millis(delay));let _=write!(stream,"HTTP/1.1 {status} OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());});(url,handle)
+    }
+    fn request()->LlmRequest{LlmRequest{system:None,prompt:"non-sensitive test".into(),model:None,max_tokens:None,temperature:None}}
+    #[tokio::test] async fn cloud_status_and_body_matrix_never_exposes_credentials() {
+        for (status,body) in [(403,SECRET.into()),(404,SECRET.into()),(429,SECRET.into()),(500,SECRET.into()),(502,SECRET.into()),(503,SECRET.into()),(200,"{".into()),(200,"{}".into()),(200,String::new()),(200,"data: {stream}".into()),(200,"x".repeat(262145))] {
+            let (url,h)=serve(status,body,0);let p=CloudProvider::new("openai".into(),url,"test".into(),SECRET.into(),2).unwrap();let error=p.complete(request()).await.unwrap_err().to_string();assert!(error.len()<150);assert!(!error.contains(SECRET));assert!(!error.contains("NYRC_TEST"));h.join().unwrap();
+        }
+        assert!(!redact_secret(&format!("echo {SECRET}; NYRC_TEST_SE"),SECRET).contains(SECRET));
+    }
+    #[tokio::test] async fn slow_body_times_out_and_gemini_parser_uses_bounded_transport() {
+        let (url,h)=serve(200,"{}".into(),2100);let p=CloudProvider::new("openai".into(),url,"test".into(),SECRET.into(),2).unwrap();assert!(p.complete(request()).await.is_err());h.join().unwrap();
+        let (url,h)=serve(200,json!({"candidates":[{"content":{"parts":[{"text":"safe Gemini fixture"}]}}]}).to_string(),0);
+        let mut p=CloudProvider::new("openai".into(),url,"test".into(),SECRET.into(),2).unwrap();p.kind="gemini".into();assert_eq!(p.complete(request()).await.unwrap().text,"safe Gemini fixture");h.join().unwrap();
+    }
+    #[tokio::test] async fn ollama_rejects_oversized_empty_malformed_and_http_failure() {
+        for (status,body) in [(200,"x".repeat(262145)),(200,"not json".into()),(200,json!({"response":""}).to_string()),(500,SECRET.into()),(200,json!({"response":"x".repeat(65537)}).to_string())] {
+            let (url,h)=serve(status,body,0);let p=crate::llm::ollama::OllamaProvider::new(url,"test");let error=p.complete(request()).await.unwrap_err().to_string();assert!(!error.contains(SECRET));h.join().unwrap();
+        }
     }
 }

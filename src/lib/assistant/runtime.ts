@@ -9,7 +9,7 @@ import {
   type CompanionAction,
 } from "../tasks/action";
 import { api } from "../bridge/api";
-import { invoke } from "../bridge/tauri";
+import { invoke, invokeService } from "../bridge/tauri";
 import { localRoute, type Entities, type Route } from "./router";
 import { validateProposal } from "./proposals";
 import {
@@ -90,10 +90,10 @@ export class AssistantRuntime {
       canExecute: (a) =>
         /^(pocket|calendar|clipboard)\./.test(a.id) ||
         a.id === "developer.task.status",
-      execute: async (a) => {
+      execute: async (a, signal) => {
         const blocked=await new CapabilityRegistry().check(a.id);
         if(blocked)return actionFailure(blocked.code,blocked.message);
-        return invoke("assistant_service", { action: a.id, payload: a.payload })
+        return invokeService(a.id, a.payload, signal)
           .then((data) => ({ ok: true as const, data }))
           .catch((error: unknown) =>
             actionFailure(
@@ -113,10 +113,10 @@ export class AssistantRuntime {
     ];
     this.executor = {
       canExecute: (a) => all.some((e) => e.canExecute(a)),
-      execute: async (a) => {
+      execute: async (a, signal) => {
         const e = all.find((e) => e.canExecute(a));
         return e
-          ? e.execute(a)
+          ? e.execute(a, signal)
           : actionFailure("unsupported_action", "This action is unavailable.");
       },
     };
@@ -125,6 +125,7 @@ export class AssistantRuntime {
     input: string,
     entities: Entities = {},
   ): Promise<{ route: Route; task?: CompanionTask; message: string }> {
+    if (!input.trim() || input.length > 2000) return { route: {source: "clarification", confidence: 0}, message: "Use a request of at most 2,000 characters." };
     this.interactions.push({
       at: Date.now(),
       text: input.trim().toLowerCase(),

@@ -3,6 +3,10 @@ import { validateInput, validateCommand, validateCapabilities, BODY_VERSION, typ
 export interface BodyAdapter {readonly bodyId:string;connect():Promise<void>;disconnect():Promise<void>;getCapabilities():BodyCapabilities;send(command:BodyCommand):Promise<void>;subscribe(listener:(event:BodyInputEvent)=>void):()=>void;}
 export type BodyStatus={bodyId:string;version:number;capabilities:BodyCapabilities;connected:boolean;batteryPercent?:number;lastEvent?:string;lastError?:string};
 export class BodyCore {
+ private sequenceTimers = new Set<ReturnType<typeof setTimeout>>();
+ private cancelSequence(){for(const timer of this.sequenceTimers)clearTimeout(timer);this.sequenceTimers.clear();}
+ dispose(){this.cancelSequence();if(this.resetTimer)clearTimeout(this.resetTimer);for(const off of this.subscriptions.values())off();for(const adapter of this.adapters.values())void adapter.disconnect();this.adapters.clear();this.subscriptions.clear();this.listeners.clear();this.inputListeners.clear();this.taps.clear();this.sent.clear();this.statuses.clear();this.lifecycle.clear();}
+ private lifecycle=new Map<string,number>();private nextLifecycle=0;
  private resetTimer:ReturnType<typeof setTimeout>|undefined;
  constructor(){this.cached.set("expression",{version:1,type:"expression",bodyId:"cached",payload:{id:"neutral",intensity:.2,durationMs:900}});}
  private adapters=new Map<string,BodyAdapter>();private subscriptions=new Map<string,()=>void>();private statuses=new Map<string,BodyStatus>();private cached=new Map<string,BodyCommand>();private sent=new Map<string,string>();private taps=new Map<string,{count:number;at:number}>();private listeners=new Set<()=>void>();private inputListeners=new Set<(e:BodyInputEvent)=>void>();
@@ -11,14 +15,20 @@ export class BodyCore {
  diagnostics(){return [...this.statuses.values()].map(s=>({...s}));}
  async connect(adapter:BodyAdapter){
   if(!validateCapabilities(adapter.getCapabilities()))throw Error("Invalid body capabilities");
-  if(this.adapters.has(adapter.bodyId))await this.disconnect(adapter.bodyId);
-  await adapter.connect();this.adapters.set(adapter.bodyId,adapter);
+  const generation=++this.nextLifecycle;this.lifecycle.set(adapter.bodyId,generation);
+  const previous=this.adapters.get(adapter.bodyId);this.subscriptions.get(adapter.bodyId)?.();this.subscriptions.delete(adapter.bodyId);this.adapters.delete(adapter.bodyId);
+  await previous?.disconnect();
+  if(this.lifecycle.get(adapter.bodyId)!==generation)return;
+  await adapter.connect();
+  if(this.lifecycle.get(adapter.bodyId)!==generation){await adapter.disconnect();return;}
+  this.adapters.set(adapter.bodyId,adapter);
   this.statuses.set(adapter.bodyId,{bodyId:adapter.bodyId,version:BODY_VERSION,capabilities:adapter.getCapabilities(),connected:true});
   this.subscriptions.set(adapter.bodyId,adapter.subscribe(e=>this.input(e)));
-  for(const c of this.cached.values())await this.send({...c,bodyId:adapter.bodyId},true);
+  for(const c of this.cached.values()) {if(this.lifecycle.get(adapter.bodyId)!==generation)return;await this.send({...c,bodyId:adapter.bodyId},true);}
   this.changed();
  }
- async disconnect(id:string){const adapter=this.adapters.get(id);this.subscriptions.get(id)?.();this.subscriptions.delete(id);await adapter?.disconnect();this.adapters.delete(id);const s=this.statuses.get(id);if(s){s.connected=false;s.lastEvent="disconnected";}for(const k of this.sent.keys())if(k.startsWith(`${id}:`))this.sent.delete(k);this.changed();}
+ async disconnect(id:string){this.lifecycle.delete(id);const adapter=this.adapters.get(id);this.adapters.delete(id);this.subscriptions.get(id)?.();this.subscriptions.delete(id);const s=this.statuses.get(id);if(s){s.connected=false;s.lastEvent="disconnected";}this.taps.delete(id);for(const k of this.sent.keys())if(k.startsWith(`${id}:`))this.sent.delete(k);const inactive=[...this.statuses.values()].filter(s=>!s.connected);for(const old of inactive.slice(0,Math.max(0,inactive.length-16)))this.statuses.delete(old.bodyId);this.changed();await adapter?.disconnect();}
+
  input(event:unknown){
   if(!validateInput(event)){return false;}const s=this.statuses.get(event.bodyId);if(!s?.connected||!s.capabilities.inputs.includes(event.type)){if(s)s.lastError="Unnegotiated input";this.changed();return false;}
   s.lastEvent=event.type;s.lastError=undefined;if(event.type==="battery")s.batteryPercent=Number(event.payload.percent);
@@ -32,10 +42,12 @@ export class BodyCore {
   else if(event.type==="sleep")reactions=[{expression:"sleeping",intensity:.2,durationMs:1200}];
   else if(event.type==="battery"&&Number(event.payload.percent)<20)reactions=reactionsFor("low_battery");
   // Gesture sequences are queued, never streamed as display frames.
-  let offset=0;for(const reaction of reactions){if(offset===0)this.react(reaction);else setTimeout(()=>this.react(reaction),offset);offset+=reaction.durationMs;}
+  this.cancelSequence();
+  let offset=0;for(const reaction of reactions){if(offset===0)this.react(reaction,true);else {const timer=setTimeout(()=>{this.sequenceTimers.delete(timer);this.react(reaction,true);},offset);this.sequenceTimers.add(timer);}offset+=reaction.durationMs;}
   this.changed();return true;
  }
- react(reaction:Reaction){
+ react(reaction:Reaction, sequence=false){
+  if(!sequence)this.cancelSequence();
   if(this.resetTimer)clearTimeout(this.resetTimer);
   this.resetTimer=setTimeout(()=>{
    const command:BodyCommand={version:1,type:"expression",bodyId:"cached",payload:{id:"neutral",intensity:.2,durationMs:900}};

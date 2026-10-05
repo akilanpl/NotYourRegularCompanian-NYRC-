@@ -83,11 +83,12 @@ export class DesktopAssistantExecutor implements ActionExecutor {
     return (ACTIONS as readonly string[]).includes(action.id);
   }
 
-  async execute(action: CompanionAction): Promise<ActionResult> {
+  async execute(action: CompanionAction, signal?: AbortSignal): Promise<ActionResult> {
     if (!this.canExecute(action)) {
       return actionFailure("unsupported_action", `Unsupported assistant action: ${action.id}`);
     }
     try {
+      if (signal?.aborted) return actionFailure("cancelled", "Action cancelled");
       const unavailable = await this.registry?.check(action.id);
       if (unavailable) return actionFailure(unavailable.code, unavailable.message);
       switch (action.id) {
@@ -148,7 +149,7 @@ export class DesktopAssistantExecutor implements ActionExecutor {
           await this.backend.deleteAlias(requiredString(action.payload, "id"));
           return actionSuccess({ deleted: true });
         case "alias.execute":
-          return this.executeAlias(requiredString(action.payload, "phrase"));
+          return this.executeAlias(requiredString(action.payload, "phrase"), signal);
         case "mode.list":
           return actionSuccess(await this.backend.listModes());
         case "mode.create":
@@ -164,7 +165,7 @@ export class DesktopAssistantExecutor implements ActionExecutor {
           await this.backend.deleteMode(requiredString(action.payload, "id"));
           return actionSuccess({ deleted: true });
         case "mode.activate":
-          return this.activateMode(requiredString(action.payload, "name"));
+          return this.activateMode(requiredString(action.payload, "name"), signal);
         default:
           return actionFailure("unsupported_action", `Unsupported assistant action: ${action.id}`);
       }
@@ -173,7 +174,7 @@ export class DesktopAssistantExecutor implements ActionExecutor {
     }
   }
 
-  private async executeAlias(phrase: string): Promise<ActionResult> {
+  private async executeAlias(phrase: string, signal?: AbortSignal): Promise<ActionResult> {
     const aliases = await this.backend.listAliases();
     const normalized = normalizePhrase(phrase);
     const alias = aliases.find((candidate) => candidate.normalizedPhrase === normalized);
@@ -183,16 +184,17 @@ export class DesktopAssistantExecutor implements ActionExecutor {
       application: { id: "app.open", payload: { application: alias.target }, permission: "none" },
       mode: { id: "mode.activate", payload: { name: alias.target }, permission: "none" },
     };
-    return this.execute(delegated[alias.targetType]);
+    return this.execute(delegated[alias.targetType], signal);
   }
 
-  private async activateMode(name: string): Promise<ActionResult> {
+  private async activateMode(name: string, signal?: AbortSignal): Promise<ActionResult> {
     const modes = await this.backend.listModes();
     const mode = modes.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase());
     if (!mode) return actionFailure("mode_not_found", `Mode "${name}" was not found`);
 
     const results: ModeStepResult[] = [];
     for (const [index, value] of mode.actions.entries()) {
+      if (signal?.aborted) return actionFailure("cancelled", "Mode cancelled");
       const parsed = parseModeStep(value);
       if (!parsed) {
         results.push({
@@ -203,7 +205,7 @@ export class DesktopAssistantExecutor implements ActionExecutor {
         });
         continue;
       }
-      const result = await this.execute(parsed);
+      const result = await this.execute(parsed, signal);
       results.push(result.ok
         ? { index, action: parsed.id, ok: true, data: result.data }
         : { index, action: parsed.id, ok: false, error: result.error });

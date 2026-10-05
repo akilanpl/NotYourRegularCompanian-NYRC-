@@ -112,7 +112,8 @@ export function localRoute(
   if (exact[s]) return route(exact[s]);
   let m =
     /^(?:start (?:a )?)?timer(?: for)? (.+?)(?: called (.+))?$/.exec(s) ??
-    /^start (?:a )?(.+?) timer(?: called (.+))?$/.exec(s);
+    /^start (?:a )?(.+?) timer(?: called (.+))?$/.exec(s) ??
+    /^(\d.+?) timer(?: called (.+))?$/.exec(s);
   if (m) {
     const ms = duration(m[1]);
     return ms

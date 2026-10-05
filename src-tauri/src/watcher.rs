@@ -51,10 +51,10 @@ pub fn spawn_inbox_watcher(app: AppHandle, home: PathBuf) -> AppResult<WatcherHa
     let (shutdown_tx, shutdown_rx) = channel::<()>();
 
     let join = std::thread::spawn(move || {
-        let (event_tx, event_rx) = channel();
+        let (event_tx, event_rx) = std::sync::mpsc::sync_channel(128);
         let mut watcher = match RecommendedWatcher::new(
             move |res: notify::Result<Event>| {
-                let _ = event_tx.send(res);
+                let _ = event_tx.try_send(res);
             },
             Config::default().with_poll_interval(Duration::from_secs(2)),
         ) {

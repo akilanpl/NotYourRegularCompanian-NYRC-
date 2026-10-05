@@ -272,3 +272,20 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)] mod torture_tests {
+    use super::*;
+    #[test] fn reasonable_large_snapshot_and_existing_destination_are_never_overwritten() {
+        let d=tempfile::tempdir().unwrap();let root=d.path().canonicalize().unwrap();let old=root.join("source");let new=root.join("destination");sandbox::ensure_pet_home(&old).unwrap();
+        let db=Db::open(&old.join("mochi.db")).unwrap();
+        for i in 0..300 {db.put_setting(&format!("fixture:{i}"),&"x".repeat(4096)).unwrap();}
+        for i in 0..30 {std::fs::write(old.join(format!("notes/{i}.txt")),vec![b'x';65536]).unwrap();}
+        drop(db);assert!(migrate(&old,&new).unwrap());assert_eq!(std::fs::read(new.join("notes/29.txt")).unwrap().len(),65536);
+        Db::open(&new.join("nyrc.db")).unwrap().put_setting("fixture:0","new state").unwrap();assert!(!migrate(&old,&new).unwrap());assert_eq!(Db::open(&old.join("mochi.db")).unwrap().get_setting("fixture:0").unwrap().unwrap().len(),4096);
+    }
+    #[cfg(unix)] #[test] fn symlink_inside_source_and_destination_collision_preserve_source() {
+        let d=tempfile::tempdir().unwrap();let root=d.path().canonicalize().unwrap();let old=root.join("source");sandbox::ensure_pet_home(&old).unwrap();drop(Db::open(&old.join("mochi.db")).unwrap());
+        std::os::unix::fs::symlink(root.join("outside"),old.join("notes/link")).unwrap();assert_eq!(migrate(&old,&root.join("new")).unwrap_err().code,"unsafe_source");assert!(old.join("mochi.db").is_file());
+        std::fs::write(root.join("collision"),"retained").unwrap();assert!(migrate(&old,&root.join("collision")).is_err());assert_eq!(std::fs::read_to_string(root.join("collision")).unwrap(),"retained");
+    }
+}

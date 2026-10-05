@@ -238,7 +238,7 @@ pub struct BodyTransport {
     commands: broadcast::Sender<Command>,
 }
 #[derive(Default)]
-pub struct BodyTransportState(Mutex<Option<BodyTransport>>);
+pub struct BodyTransportState(Mutex<Option<BodyTransport>>, std::sync::atomic::AtomicU64);
 impl Drop for BodyTransportState {
     fn drop(&mut self) {
         if let Some(t) = self.0.get_mut().take() {
@@ -285,6 +285,7 @@ type Sink = Arc<dyn Fn(&str, Value) + Send + Sync>;
 async fn session(
     stream: TcpStream,
     token: String,
+    expires: tokio::time::Instant,
     mut commands: broadcast::Receiver<Command>,
     sink: Sink,
     mut stop: watch::Receiver<bool>,
@@ -301,7 +302,7 @@ async fn session(
             body_id,
             token: provided,
             capabilities,
-        })) if id(&message_id)
+        })) if tokio::time::Instant::now() < expires && id(&message_id)
             && id(&body_id)
             && body_id != "desktop"
             && body_id != "virtual"
@@ -342,7 +343,7 @@ async fn session(
         _=tokio::time::sleep_until(last_received+Duration::from_secs(65))=>break,
         frame=read_frame(&mut r,&mut decoder)=>{let frame=match frame{Ok(f)=>f,Err(code)=>{let _=write_frame(&mut w,json!({"type":"error","version":1,"code":code})).await;break;}};last_received=tokio::time::Instant::now();match frame{
         Frame::Input{version:1,message_id,event}if id(&message_id)&&event.body_id==body_id&&event.valid()&&capabilities.inputs.contains(&event.kind)=>{if !seen.contains(&message_id){if last_input.elapsed()<Duration::from_millis(20){let _=write_frame(&mut w,json!({"type":"error","version":1,"code":"rate_limited"})).await;continue;}last_input=tokio::time::Instant::now();if seen.len()>=128{seen.pop_front();}seen.push_back(message_id.clone());sink("body:input",serde_json::to_value(event).unwrap_or(Value::Null));}if write_frame(&mut w,json!({"type":"ack","version":1,"messageId":message_id})).await.is_err(){break;}},
-        Frame::Heartbeat{version:1,message_id}if id(&message_id)=>{if write_frame(&mut w,json!({"type":"status","version":1,"messageId":message_id,"state":"connected"})).await.is_err(){break;}},Frame::Ack{version:1,message_id}if id(&message_id)=>{pending.remove(&message_id);},_=>{let _=write_frame(&mut w,json!({"type":"error","version":1,"code":"invalid_message"})).await;break;}}},
+        Frame::Heartbeat{version:1,message_id}if id(&message_id)=>{if write_frame(&mut w,json!({"type":"status","version":1,"messageId":message_id,"state":"connected"})).await.is_err(){break;}},Frame::Ack{version:1,message_id}if id(&message_id)=>{if !pending.remove(&message_id){let _=write_frame(&mut w,json!({"type":"error","version":1,"code":"invalid_ack"})).await;break;}},_=>{let _=write_frame(&mut w,json!({"type":"error","version":1,"code":"invalid_message"})).await;break;}}},
         command=commands.recv()=>{match command{Ok(command)if command.body_id==body_id&&capabilities.outputs.contains(&command.kind)=>{if pending.len()>=32{let _=write_frame(&mut w,json!({"type":"error","version":1,"code":"ack_backlog"})).await;break;}let mid=uuid::Uuid::new_v4().to_string();pending.insert(mid.clone());if write_frame(&mut w,json!({"type":"command","version":1,"messageId":mid,"command":command})).await.is_err(){break;}},Err(_)=>break,_=>{}}}
         }
     }
@@ -369,6 +370,7 @@ async fn start(sink: Sink) -> Result<BodyTransport, String> {
         port,
         token: token.clone(),
     };
+    let expires = tokio::time::Instant::now() + Duration::from_secs(600);
     let (stop, mut stopped) = watch::channel(false);
     let (commands, _) = broadcast::channel::<Command>(64);
     let sender = commands.clone();
@@ -376,7 +378,7 @@ async fn start(sink: Sink) -> Result<BodyTransport, String> {
         let identities = Arc::new(Mutex::new(HashSet::new()));
         let active = Arc::new(tokio::sync::Semaphore::new(4));
         loop {
-            tokio::select! {_=stopped.changed()=>break,accepted=listener.accept()=>{if let Ok((stream,_))=accepted{if let Ok(permit)=active.clone().try_acquire_owned(){let receiver=sender.subscribe();let token=token.clone();let sink=sink.clone();let stop=stopped.clone();let identities=identities.clone();tokio::spawn(async move{let _permit=permit;session(stream,token,receiver,sink,stop,identities).await;});}}}}
+            tokio::select! {_=stopped.changed()=>break,accepted=listener.accept()=>{if let Ok((stream,_))=accepted{if let Ok(permit)=active.clone().try_acquire_owned(){let receiver=sender.subscribe();let token=token.clone();let sink=sink.clone();let stop=stopped.clone();let identities=identities.clone();tokio::spawn(async move{let _permit=permit;session(stream,token,expires,receiver,sink,stop,identities).await;});}}}}
         }
     });
     Ok(BodyTransport {
@@ -390,6 +392,7 @@ pub async fn start_body_transport(
     app: tauri::AppHandle,
     state: tauri::State<'_, BodyTransportState>,
 ) -> Result<TransportInfo, String> {
+    let generation = state.1.load(std::sync::atomic::Ordering::SeqCst);
     if let Some(t) = state.0.lock().as_ref() {
         return Ok(t.info.clone());
     }
@@ -398,6 +401,7 @@ pub async fn start_body_transport(
     });
     let transport = start(sink).await?;
     let mut guard = state.0.lock();
+    if generation != state.1.load(std::sync::atomic::Ordering::SeqCst) { let _ = transport.stop.send(true); return Err("Transport start cancelled".into()); }
     if let Some(t) = guard.as_ref() {
         let _ = transport.stop.send(true);
         return Ok(t.info.clone());
@@ -408,6 +412,7 @@ pub async fn start_body_transport(
 }
 #[tauri::command]
 pub fn stop_body_transport(state: tauri::State<'_, BodyTransportState>) {
+    state.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     if let Some(t) = state.0.lock().take() {
         let _ = t.stop.send(true);
     }
@@ -553,4 +558,46 @@ mod tests {
         ));
         assert!(decoder.is_empty());
     }
+}
+
+#[cfg(test)] mod fuzz_hardening_tests {
+    use super::*;
+    #[tokio::test] async fn deterministic_random_frames_are_bounded_and_do_not_panic() {
+        let mut seed=0x12345678u32;
+        for i in 0..1200 {
+            let len=i%4200;let mut bytes=Vec::with_capacity(len+1);
+            for _ in 0..len {seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);bytes.push((seed>>24) as u8);}bytes.push(b'\n');
+            let mut reader=BufReader::new(bytes.as_slice());let mut decoder=Vec::new();let _=read_frame(&mut reader,&mut decoder).await;assert!(decoder.len()<=MAX_FRAME);
+        }
+        for raw in [b"\n".as_slice(),b"{}\n",b"{\"type\":\"shell\"}\n",b"{\"type\":\"heartbeat\",\"version\":-1,\"messageId\":\"x\"}\n"] {
+            assert!(read_frame(&mut BufReader::new(raw),&mut Vec::new()).await.is_err());
+        }
+    }
+    #[tokio::test] async fn expired_handshake_and_identity_collision_cannot_take_over() {
+        let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap();assert!(addr.ip().is_loopback());
+        let stream=TcpStream::connect(addr).await.unwrap();let (server,_)=listener.accept().await.unwrap();let (sender,_)=broadcast::channel(8);let (_stop,stopped)=watch::channel(false);
+        let handle=tokio::spawn(session(server,"fake-token".into(),tokio::time::Instant::now()-Duration::from_secs(1),sender.subscribe(),Arc::new(|_,_|panic!("expired body must not emit")),stopped,Arc::new(Mutex::new(HashSet::new()))));
+        let (r,mut w)=stream.into_split();write_frame(&mut w,json!({"type":"hello","version":1,"messageId":"h","bodyId":"esp32","token":"fake-token","capabilities":{"inputs":[],"outputs":[]}})).await.unwrap();let mut line=String::new();BufReader::new(r).read_line(&mut line).await.unwrap();assert!(line.contains("handshake_rejected"));handle.await.unwrap();
+    }
+    #[test] fn hostile_semantic_payload_matrix() {
+        for percent in [-1.,101.,1e100] {let e:Input=serde_json::from_value(json!({"version":1,"type":"battery","bodyId":"esp32","timestamp":"2026-10-05T00:00:00Z","payload":{"percent":percent}})).unwrap();assert!(!e.valid());}
+        for output in ["filesystem.read","shell.execute","ai.propose","brightness"] {let c:Command=serde_json::from_value(json!({"version":1,"type":output,"bodyId":"esp32","payload":{"level":-1}})).unwrap();assert!(!c.valid());}
+        for id_value in ["", "../escape", "desktop/other"] {assert!(!id(id_value));}
+    }
+}
+
+#[cfg(test)] mod reconnect_stress {
+ use super::*;
+ #[tokio::test] async fn duplicate_identity_is_rejected_and_50_reconnects_release_sessions() {
+  let events=Arc::new(Mutex::new(Vec::new()));let copy=events.clone();let transport=start(Arc::new(move |name,value|copy.lock().push((name.to_string(),value)))).await.unwrap();
+  async fn connect(port:u16,token:&str)->(BufReader<tokio::net::tcp::OwnedReadHalf>,tokio::net::tcp::OwnedWriteHalf,String) {
+   let socket=TcpStream::connect((std::net::Ipv4Addr::LOCALHOST,port)).await.unwrap();let (r,mut w)=socket.into_split();write_frame(&mut w,json!({"type":"hello","version":1,"messageId":"hello","bodyId":"stress","token":token,"capabilities":{"inputs":["touch"],"outputs":["expression"]}})).await.unwrap();let mut r=BufReader::new(r);let mut line=String::new();timeout(Duration::from_secs(2),r.read_line(&mut line)).await.unwrap().unwrap();(r,w,line)
+  }
+  let (r,w,hello)=connect(transport.info.port,&transport.info.token).await;assert!(hello.contains("welcome"));let (_,_,collision)=connect(transport.info.port,&transport.info.token).await;assert!(collision.contains("body_already_connected"));drop(r);drop(w);
+  for i in 0..50 {
+   for _ in 0..100 {if events.lock().iter().filter(|(n,v)|n=="body:connection"&&v["connected"]==false).count()>i {break;}tokio::time::sleep(Duration::from_millis(1)).await;}
+   let (r,w,line)=connect(transport.info.port,&transport.info.token).await;assert!(line.contains("welcome"));drop(r);drop(w);
+  }
+  let _=transport.stop.send(true);
+ }
 }

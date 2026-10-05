@@ -76,7 +76,7 @@
 
   onMount(async () => {
     await tick();
-    primaryBtn?.focus();
+    secondaryBtn?.focus();
   });
 </script>
 

@@ -77,7 +77,7 @@ export function estimateState(s: StateSignals) {
       d[k] = manual;
       factors.push(`manual ${k}`);
     }
-    d[k] = Math.max(0, Math.min(1, d[k]));
+    d[k] = Number.isFinite(d[k]) ? Math.max(0, Math.min(1, d[k])) : 0.5;
   }
   const label =
     d.focus > 0.65

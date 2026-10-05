@@ -17,6 +17,7 @@ describe("deterministic command routing", () => {
     ["what time is it", "time.current"],
     ["time", "time.current"],
     ["timer 25 minutes", "timer.create"],
+    ["25 minute timer", "timer.create"],
     ["start a timer for 10 minutes", "timer.create"],
     ["start a 25 minute timer", "timer.create"],
     ["volume 30", "system.volume.set"],
