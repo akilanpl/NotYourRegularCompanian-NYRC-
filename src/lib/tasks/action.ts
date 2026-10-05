@@ -3,6 +3,20 @@ export type ActionId = `${string}.${string}`;
 export const ACTION_IDS = [
   "time.current",
   "calendar.read",
+  "calendar.list",
+  "calendar.get",
+  "calendar.delete",
+  "pocket.save_text",
+  "pocket.save_url",
+  "pocket.save_file",
+  "pocket.export_file",
+  "pocket.list",
+  "pocket.get",
+  "pocket.delete",
+  "clipboard.read",
+  "clipboard.write",
+  "clipboard.to_pocket",
+
   "calendar.create",
   "calendar.update",
   "system.volume.set",
@@ -47,6 +61,8 @@ export const ACTION_IDS = [
   "developer.task.status",
   "developer.permission.respond",
 ] as const satisfies readonly ActionId[];
+
+export type KnownActionId = (typeof ACTION_IDS)[number];
 
 export type PermissionLevel = "none" | "confirm" | "sensitive";
 

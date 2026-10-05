@@ -5,6 +5,11 @@
   import InboxConsent from "./InboxConsent.svelte";
   import PetActions from "./PetActions.svelte";
   import PetStatus from "./PetStatus.svelte";
+  import { AssistantRuntime } from "../assistant/runtime";
+  import { reactionsFor } from "../character";
+  import { CalendarProactivity, type CalendarEvent } from "../assistant/calendar";
+  import { adaptation } from "../assistant/state";
+  import { validDeveloperEvent, developerReaction, Proactivity, type DeveloperEvent } from "../assistant/developer";
   import LocalUtilityPanel from "./LocalUtilityPanel.svelte";
   import {
     computeAwayMinutes,
@@ -99,6 +104,16 @@
   let notificationPermission = $state<ScheduledNotificationPermission>("not_requested");
   const utilityRuntime = new LocalUtilityRuntime();
   const schedulerRuntime = new SchedulerRuntime();
+  const assistantRuntime = new AssistantRuntime(utilityRuntime.timers);
+  const proactivity = new Proactivity();
+  const calendarProactivity = new CalendarProactivity(message => { setCharacterReaction(reactionsFor("reminder_fired")[0]); flashBubble(message,6000); });
+  let assistantDisposed = false;
+  let unlistenDeveloper: (() => void) | undefined;
+  let focusSession = false;
+  const unsubscribeAssistant = assistantRuntime.tasks.subscribe(({task,reaction}) => {
+    setCharacterReaction(reaction);
+    if(task.status === "succeeded" && task.action.id === "mode.activate") focusSession = /study|focus|work/i.test(String((task.action.payload as {name:string}).name));
+  });
   let unsubscribeUtilityTasks: (() => void) | null = null;
   let unsubscribeTimerFinished: (() => void) | null = null;
   let unsubscribeScheduledTasks: (() => void) | null = null;
@@ -517,7 +532,7 @@
     // cooldowns enforced inside `nextNudge`). LLM is intentionally not in this
     // path — nudges must work even when Ollama is offline (PRD §5.2).
     const nudge = nextNudge(pet, nudgeState, now);
-    if (nudge) {
+    if (nudge && !focusSession) {
       flashBubble(`${pet.name}: ${nudge.bubble}`, 2_500);
       if (nudge.animation && now >= actionPlayingUntil) {
         // Override this tick's animation; the next tick re-derives from stats.
@@ -1429,6 +1444,15 @@
     onResize();
     window.addEventListener("resize", onResize);
     window.addEventListener("pointermove", onPointerMove);
+    void listen<DeveloperEvent>("developer:event", event => {
+      if (!validDeveloperEvent(event)) return;
+      assistantRuntime.observeDeveloper(event.type);
+      const state = assistantRuntime.estimatedState;
+      if (!proactivity.accept(event,adaptation(state).quiet)) return;
+      const reaction = developerReaction(event);
+      setCharacterReaction({...reaction,intensity:assistantRuntime.estimatedState.dimensions.fatigue>.55 ? Math.min(.35,reaction.intensity) : reaction.intensity});
+      flashBubble(event.message ?? event.type.replace("developer.",""), 5000);
+    }).then(unlisten => { if(assistantDisposed) unlisten(); else unlistenDeveloper = unlisten; });
     unsubscribeUtilityTasks = utilityRuntime.subscribe(({ task, reaction }) => {
       latestUtilityTask = task;
       setCharacterReaction(reaction);
@@ -1502,6 +1526,7 @@
         animationIntensity = clampIntensity(settings.animationIntensity);
         notify.setEnabled(settings.desktopNotifications);
         applyStageBackground(settings.stageBackground);
+        if(settings.personality) assistantRuntime.personality = settings.personality;
         setSfxEnabled(settings.soundEffects);
       } catch {
         // Defaults stay: intensity 1, transparent stage, sounds on.
@@ -1512,7 +1537,9 @@
           stageBackground?: string;
           soundEffects?: boolean;
           desktopNotifications?: boolean;
+          personality?: import("../assistant/personality").Personality;
         }>("settings:changed", (payload) => {
+          if(payload.personality) assistantRuntime.personality = payload.personality;
           if (payload && typeof payload.animationIntensity === "number") {
             animationIntensity = clampIntensity(payload.animationIntensity);
           }
@@ -1669,6 +1696,10 @@
     if (unlistenSettings) unlistenSettings();
     if (unlistenSettingsFocus) unlistenSettingsFocus();
     if (unlistenSettingsBlur) unlistenSettingsBlur();
+    assistantDisposed = true;
+    calendarProactivity.dispose();
+    unsubscribeAssistant();
+    unlistenDeveloper?.();
     if (unsubscribeUtilityTasks) unsubscribeUtilityTasks();
     if (unsubscribeTimerFinished) unsubscribeTimerFinished();
     if (unsubscribeScheduledTasks) unsubscribeScheduledTasks();
@@ -1788,6 +1819,19 @@
   </div>
 
   <LocalUtilityPanel
+    {assistantRuntime}
+    assistantEntities={() => ({aliases:assistantAliases,modes:assistantModes,timers:utilityRuntime.timers.list(),scheduled:scheduledItems})}
+    onAssistantThinking={() => setCharacterReaction(reactionsFor("thinking")[0])}
+    onAssistantResult={(task) => {
+      focusSession = adaptation(assistantRuntime.estimatedState).quiet;
+      activeTimers = utilityRuntime.timers.list();
+      if(task) latestUtilityTask = task;
+      if(task?.result && typeof task.result === 'object' && 'volume' in task.result && typeof task.result.volume === 'number') systemVolume = task.result.volume;
+      if(task?.status === "succeeded") {
+        void schedulerRuntime.refresh().catch(() => undefined);
+        if(task.action.id === "calendar.list" && Array.isArray(task.result)) calendarProactivity.load(task.result as CalendarEvent[]);
+      }
+    }}
     open={localUtilityOpen}
     timers={activeTimers}
     currentTime={currentLocalTime}

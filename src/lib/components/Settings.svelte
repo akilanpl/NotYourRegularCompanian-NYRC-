@@ -8,6 +8,8 @@
     type EventLogEntry,
     type StatusReport,
   } from "../bridge/api";
+  import { defaultPersonality } from "../assistant/personality";
+  import { invoke } from "../bridge/tauri";
   import { emit } from "../bridge/tauri";
   import { KEEPSAKE_MEMORY_TYPE } from "../sim";
 
@@ -26,6 +28,22 @@
   let loadError = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let pendingApiKey = $state("");
+  let providerTest = $state("");
+  let calendar = $state({calendarId:"primary",clientId:"",enabled:false});
+  let calendarSecret = $state("");
+  let calendarRefresh = $state("");
+  let pocketLimit = $state(262144);
+  async function testProvider() {
+    if (!settings) return;
+    providerTest = "Testing…";
+    try { settings = await api.saveSettings(settings); providerTest = await invoke<string>("test_provider"); }
+    catch { providerTest = "Connection failed. Check provider, model, credentials and local-only mode."; }
+  }
+  async function saveCalendar() {
+    try { await invoke("save_calendar_config",{config:calendar,clientSecret:calendarSecret || null,refreshToken:calendarRefresh || null});calendarSecret="";calendarRefresh="";savingMessage="Calendar configuration saved"; }
+    catch { actionError="Could not save calendar configuration securely."; }
+  }
+
   let approvedSummary = $state<{ name: string; text: string } | null>(null);
 
   function showError(prefix: string, e: unknown) {
@@ -44,7 +62,8 @@
         api.getEventLog(50),
         api.listStatusReports(10),
       ]);
-      settings = s;
+      settings = {...s,personality:s.personality ?? {...defaultPersonality}};
+      calendar = await invoke<typeof calendar>("get_calendar_config");
       memories = m;
       inbox = ix;
       events = ev;
@@ -89,11 +108,13 @@
   async function saveApiKey() {
     if (!settings) return;
     try {
+      settings = await api.saveSettings(settings);
       const isSet = await api.setCloudApiKey(pendingApiKey || null);
       settings = { ...settings, cloudApiKeySet: isSet };
       pendingApiKey = "";
       savingMessage = isSet ? "key saved ✓" : "key cleared ✓";
     } catch (e) {
+      pendingApiKey = "";
       showError("save key", e);
     }
     setTimeout(() => (savingMessage = ""), 2_000);
@@ -280,11 +301,25 @@
             <option value="quiet">quiet</option>
           </select>
         </label>
+        {#if settings.personality}
+          <fieldset><legend>NYRC personality</legend>
+          {#each Object.keys(defaultPersonality) as dimension}
+            <label>{dimension}<input type="range" min="0" max="1" step="0.05" bind:value={settings.personality[dimension as keyof typeof defaultPersonality]} /></label>
+          {/each}
+          </fieldset>
+        {/if}
         <label>
-          LLM provider
-          <select bind:value={settings.llmProvider}>
+          AI provider
+          <select bind:value={settings.llmProvider} onchange={() => {
+            if(!settings) return;
+            if(settings.llmProvider === 'gemini') settings.cloudEndpoint = 'https://generativelanguage.googleapis.com/v1beta';
+            if(settings.llmProvider === 'openai') settings.cloudEndpoint = 'https://api.openai.com/v1';
+            settings.cloudApiKeySet = false;
+          }}>
             <option value="ollama">Ollama (local)</option>
-            <option value="none">None — silent mode</option>
+            <option value="openai">OpenAI-compatible API</option>
+            <option value="gemini">Gemini</option>
+            <option value="none">None — local commands only</option>
           </select>
         </label>
         <label>
@@ -296,6 +331,13 @@
           <input bind:value={settings.ollamaModel} placeholder="gemma4:e2b" />
         </label>
 
+        {#if settings.llmProvider === "openai" || settings.llmProvider === "gemini"}
+          <label>Provider endpoint<input bind:value={settings.cloudEndpoint} placeholder={settings.llmProvider === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1"} /></label>
+          <label>Model<input bind:value={settings.cloudModel} maxlength="150" placeholder="Enter a model available to your account" /></label>
+          <label>Timeout (seconds)<input type="number" min="2" max="120" bind:value={settings.providerTimeout} /></label>
+        {/if}
+        <button onclick={testProvider}>Save configuration & test connection</button>
+        <p role="status">{providerTest}</p>
         <fieldset>
           <legend>Cloud API key (write-only)</legend>
           <p class="hint">
@@ -316,6 +358,23 @@
           </div>
         </fieldset>
 
+        <fieldset>
+          <legend>Google Calendar</legend>
+          <p class="hint">Disconnected until you provide Google OAuth credentials. Enable the Calendar API and authorize the calendar.events scope. Refresh tokens and client secrets are saved in your OS keyring.</p>
+          <label>Calendar ID<input bind:value={calendar.calendarId} maxlength="250" /></label>
+          <label>OAuth client ID<input bind:value={calendar.clientId} maxlength="300" /></label>
+          <label>Client secret<input type="password" autocomplete="off" bind:value={calendarSecret} /></label>
+          <label>OAuth refresh token<input type="password" autocomplete="off" bind:value={calendarRefresh} /></label>
+          <label><input type="checkbox" bind:checked={calendar.enabled} />Enable Google Calendar</label>
+          <button onclick={saveCalendar}>Save securely</button>
+          <button onclick={async()=>{await invoke("disconnect_calendar");calendar.enabled=false;}}>Disconnect & remove credentials</button>
+        </fieldset>
+        <fieldset>
+          <legend>Pocket</legend>
+          <label>Maximum item bytes (1 KiB–1 MiB)<input type="number" min="1024" max="1048576" bind:value={pocketLimit} /></label>
+          <button onclick={async()=>{try{await invoke("set_pocket_limit",{bytes:pocketLimit});savingMessage="Pocket limit saved";}catch{actionError="Invalid Pocket limit";}}}>Save limit</button>
+          <p class="hint">File imports read only files you place in the NYRC inbox. Binary files can be exported to NYRC’s exports folder.</p>
+        </fieldset>
         <label class="row">
           <input type="checkbox" bind:checked={settings.localOnlyMode} />
           Local-only mode (block any cloud calls)

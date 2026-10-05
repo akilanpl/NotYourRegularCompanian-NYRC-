@@ -176,7 +176,7 @@ export class SchedulerRuntime {
     }
   }
 
-  private async refresh(): Promise<void> {
+  async refresh(): Promise<void> {
     this.items = await this.backend.listScheduledItems();
     for (const listener of this.listeners) {
       try {

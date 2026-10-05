@@ -13,6 +13,9 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 const SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS developer_events (id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS pocket (id TEXT PRIMARY KEY, item_json TEXT NOT NULL);
+
 CREATE TABLE IF NOT EXISTS pet_state (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -375,6 +378,26 @@ fn map_assistant_mode(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssistantMode
 }
 
 impl Db {
+    pub fn claim_developer_event(&self,id:&str)->AppResult<bool> {
+        Ok(self.conn.lock().execute("INSERT OR IGNORE INTO developer_events(id) VALUES (?1)",[id])? == 1)
+    }
+
+    pub fn save_pocket_item(&self, item: &crate::commands::PocketItem) -> AppResult<()> {
+        let conn = self.conn.lock();
+        conn.execute("INSERT INTO pocket(id,item_json) VALUES (?1,?2)", params![item.id,serde_json::to_string(item)?])?;
+        Ok(())
+    }
+    pub fn get_pocket_item(&self, id: &str) -> AppResult<crate::commands::PocketItem> {
+        let raw: Option<String> = self.conn.lock().query_row("SELECT item_json FROM pocket WHERE id=?1",[id],|r|r.get(0)).optional()?;
+        Ok(serde_json::from_str(&raw.ok_or_else(||AppError::NotFound("Pocket item".into()))?)?)
+    }
+    pub fn list_pocket_items(&self) -> AppResult<Vec<crate::commands::PocketItem>> {
+        let conn=self.conn.lock(); let mut q=conn.prepare("SELECT item_json FROM pocket ORDER BY rowid DESC LIMIT 100")?;
+        let rows=q.query_map([],|r|r.get::<_,String>(0))?;
+        let mut items=Vec::new(); for row in rows { let mut item:crate::commands::PocketItem=serde_json::from_str(&row?)?; item.content.clear(); items.push(item); } Ok(items)
+    }
+    pub fn delete_pocket_item(&self,id:&str)->AppResult<()> {self.conn.lock().execute("DELETE FROM pocket WHERE id=?1",[id])?;Ok(())}
+
     pub fn open(path: &Path) -> AppResult<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;

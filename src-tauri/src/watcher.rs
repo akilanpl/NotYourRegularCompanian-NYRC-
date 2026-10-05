@@ -42,6 +42,12 @@ impl Drop for WatcherHandle {
 pub fn spawn_inbox_watcher(app: AppHandle, home: PathBuf) -> AppResult<WatcherHandle> {
     let inbox = home.join("inbox");
     std::fs::create_dir_all(&inbox)?;
+    let events_dir = home.join("developer-events");
+    std::fs::create_dir_all(&events_dir)?;
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&events_dir,std::fs::Permissions::from_mode(0o700))?;
+    }
     let (shutdown_tx, shutdown_rx) = channel::<()>();
 
     let join = std::thread::spawn(move || {
@@ -64,6 +70,7 @@ pub fn spawn_inbox_watcher(app: AppHandle, home: PathBuf) -> AppResult<WatcherHa
             return;
         }
 
+        if watcher.watch(&events_dir, RecursiveMode::NonRecursive).is_err() { log::warn!("developer bridge unavailable"); }
         // Initial scan — emit any pre-existing files so the UI can pick them up.
         if let Ok(files) = list_inbox(&home) {
             for f in files {
@@ -81,6 +88,10 @@ pub fn spawn_inbox_watcher(app: AppHandle, home: PathBuf) -> AppResult<WatcherHa
                 Ok(Ok(event)) => match event.kind {
                     EventKind::Create(_) | EventKind::Modify(_) => {
                         for path in event.paths {
+                            if path.parent() == Some(events_dir.as_path()) {
+                                if let Some(name) = path.file_name().and_then(|s|s.to_str()).filter(|s|s.ends_with(".json")) { crate::developer::ingest(&app,name); }
+                                continue;
+                            }
                             if path.is_file() {
                                 if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
                                     let _ = app.emit(

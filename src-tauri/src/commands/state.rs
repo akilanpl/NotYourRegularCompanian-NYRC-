@@ -82,30 +82,23 @@ pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResul
         && !endpoint_is_loopback(&settings.ollama_endpoint)
     {
         return Err(AppError::InvalidInput(
-            "local-only mode requires a loopback Ollama endpoint (localhost / 127.0.0.1 / ::1)".into(),
+            "local-only mode requires a loopback Ollama endpoint (localhost / 127.0.0.1 / ::1)"
+                .into(),
         ));
     }
 
+    settings.personality.validate()?;
+    let provider = configure_provider(&settings)?;
     let mut to_persist = settings.clone();
     to_persist.cloud_api_key_set = false; // never persist this flag
-    // REQ-114 — clamp to the closed background list so an arbitrary string
-    // can never reach the frontend's data attribute.
+                                          // REQ-114 — clamp to the closed background list so an arbitrary string
+                                          // can never reach the frontend's data attribute.
     to_persist.stage_background =
         normalize_stage_background(&to_persist.stage_background).to_string();
     let json = serde_json::to_string(&to_persist)?;
     state.db.put_setting(SETTINGS_KEY, &json)?;
 
-    // Re-bind the LLM provider so the new endpoint/model takes effect immediately
-    // and so toggling provider to "none" clears the slot.
-    let new_provider: Option<Arc<dyn LlmProvider>> = if settings.llm_provider == "ollama" {
-        Some(Arc::new(OllamaProvider::new(
-            settings.ollama_endpoint.clone(),
-            settings.ollama_model.clone(),
-        )))
-    } else {
-        None
-    };
-    state.set_llm(new_provider);
+    state.set_llm(provider);
 
     let mut echoed = to_persist;
     echoed.cloud_api_key_set = key_present(&state.db)?;
@@ -114,28 +107,97 @@ pub fn save_settings(state: State<'_, AppState>, settings: Settings) -> AppResul
 
 /// True if a non-empty cloud API key is currently stored.
 fn key_present(db: &Db) -> AppResult<bool> {
-    Ok(matches!(db.get_setting(CLOUD_API_KEY_SECRET)?, Some(v) if !v.is_empty()))
+    // One-way upgrade of the legacy SQLite setting; only delete after secure save.
+    if let Some(old) = db.get_setting(CLOUD_API_KEY_SECRET)? {
+        if !old.is_empty() {
+            crate::secrets::set("cloud_api_key:openai", Some(&old))?;
+        }
+        db.delete_setting(CLOUD_API_KEY_SECRET)?;
+    }
+    let settings = load_settings_raw(db)?;
+    Ok(crate::secrets::get(cloud_key_name(&settings))?.is_some())
 }
-
-/// Write-only setter for the cloud API key. Pass `null` (or an empty string) to
-/// remove it. Returns the resulting "set" state — true iff a non-empty key is on
-/// disk after the call.
 #[tauri::command]
 pub fn set_cloud_api_key(state: State<'_, AppState>, key: Option<String>) -> AppResult<bool> {
-    match key {
-        Some(k) if !k.is_empty() => {
-            if k.len() > 4_096 {
-                return Err(AppError::InvalidInput("api key too long".into()));
-            }
-            state.db.put_setting(CLOUD_API_KEY_SECRET, &k)?;
-            Ok(true)
-        }
-        _ => {
-            // Truly delete the row so `key_present` reports false afterwards.
-            state.db.delete_setting(CLOUD_API_KEY_SECRET)?;
-            Ok(false)
-        }
+    let settings = load_settings_raw(&state.db)?;
+    if matches!(settings.llm_provider.as_str(), "openai" | "gemini")
+        && key.as_ref().is_some_and(|k| !k.is_empty())
+    {
+        // Validate before storing: a failed configuration must not leave a saved key behind.
+        crate::llm::cloud::CloudProvider::new(
+            settings.llm_provider.clone(),
+            settings.cloud_endpoint.clone(),
+            settings.cloud_model.clone(),
+            String::new(),
+            settings.provider_timeout,
+        )?;
     }
+    let present = crate::secrets::set(cloud_key_name(&settings), key.as_deref())?;
+    state.db.delete_setting(CLOUD_API_KEY_SECRET)?;
+    state.set_llm(configure_provider(&settings)?);
+    Ok(present)
+}
+fn cloud_key_name(settings: &Settings) -> &'static str {
+    if settings.llm_provider == "gemini" {
+        "cloud_api_key:gemini"
+    } else {
+        "cloud_api_key:openai"
+    }
+}
+pub(crate) fn configure_provider(settings: &Settings) -> AppResult<Option<Arc<dyn LlmProvider>>> {
+    match settings.llm_provider.as_str() {
+        "none" => Ok(None),
+        "ollama" => {
+            crate::llm::cloud::validate_endpoint(
+                &settings.ollama_endpoint,
+                settings.local_only_mode,
+            )?;
+            Ok(Some(Arc::new(OllamaProvider::new(
+                settings.ollama_endpoint.clone(),
+                settings.ollama_model.clone(),
+            ))))
+        }
+        "openai" | "gemini" => {
+            crate::llm::cloud::validate_endpoint(&settings.cloud_endpoint, false)?;
+            if settings.llm_provider == "gemini"
+                && settings.cloud_endpoint != "https://generativelanguage.googleapis.com/v1beta"
+            {
+                return Err(AppError::InvalidInput(
+                    "use the official Gemini endpoint".into(),
+                ));
+            }
+            if settings.local_only_mode {
+                return Ok(None);
+            }
+            let key = match crate::secrets::get(cloud_key_name(settings))? {
+                Some(k) => k,
+                None => return Ok(None),
+            };
+            Ok(Some(Arc::new(crate::llm::cloud::CloudProvider::new(
+                settings.llm_provider.clone(),
+                settings.cloud_endpoint.clone(),
+                settings.cloud_model.clone(),
+                key,
+                settings.provider_timeout,
+            )?)))
+        }
+        _ => Err(AppError::InvalidInput("unknown provider".into())),
+    }
+}
+#[tauri::command]
+pub async fn test_provider(state: State<'_, AppState>) -> AppResult<String> {
+    let p = state.llm.read().clone().ok_or_else(|| {
+        AppError::LlmUnavailable("configure a provider and credential first".into())
+    })?;
+    p.complete(crate::llm::provider::LlmRequest {
+        system: Some("Reply with OK".into()),
+        prompt: "Connection test".into(),
+        max_tokens: Some(20),
+        temperature: Some(0.0),
+        model: None,
+    })
+    .await?;
+    Ok("Connected".into())
 }
 
 pub(crate) fn load_settings_raw(db: &Db) -> AppResult<Settings> {

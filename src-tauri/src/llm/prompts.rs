@@ -58,7 +58,7 @@ pub fn pet_reply_prompt(state: &PetState, memories: &[Memory], user_message: &st
         message = sanitize_for_prompt(user_message),
     );
 
-    (PET_REPLY_SYSTEM.to_string(), prompt)
+    (format!("{} {}",crate::personality::IDENTITY,PET_REPLY_SYSTEM), prompt)
 }
 
 pub fn memory_extraction_prompt(interaction: &str) -> (String, String) {
