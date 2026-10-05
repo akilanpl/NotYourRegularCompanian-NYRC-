@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "nyrc",
+  "version": "0.2.0",
+  "identifier": "com.nyrc.companion",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "NYRC",
+        "width": 360,
+        "height": 360,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "resizable": false,
+        "skipTaskbar": false,
+        "shadow": false,
+        "center": false,
+        "x": 100,
+        "y": 100
+      },
+      {
+        "label": "settings",
+        "title": "NYRC — Settings",
+        "url": "index.html#/settings",
+        "width": 520,
+        "height": 640,
+        "decorations": true,
+        "transparent": false,
+        "resizable": true,
+        "visible": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://localhost:11434"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "category": "Entertainment",
+    "shortDescription": "NYRC — local-first intelligent personal companion",
+    "longDescription": "NYRC is a local-first intelligent personal companion designed to remain useful, expressive, and alive even without cloud AI."
+  },
+  "plugins": {}
+}
