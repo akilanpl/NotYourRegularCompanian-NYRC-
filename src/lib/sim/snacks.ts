@@ -161,11 +161,6 @@ function favoriteFeedSteps(snack: SnackKey): AnimationStep[] {
   ];
 }
 
-// Last-step animation type check helper for tests.
-export function lastSnackAnimation(steps: AnimationStep[]): MovementState {
-  return steps[steps.length - 1].animation;
-}
-
 function fnv1a(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
