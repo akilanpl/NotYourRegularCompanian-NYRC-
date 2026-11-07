@@ -7,7 +7,7 @@ console.log('Rust vulnerability count: 0');
 for (const [kind, items] of Object.entries(r.warnings ?? {})) {
   for (const warning of items) {
     const advisory = warning.advisory?.id ?? 'no advisory ID';
-    console.log(`\${kind}: \${advisory} \${warning.package.name} \${warning.package.version}`);
+    console.log(`${kind}: ${advisory} ${warning.package.name} ${warning.package.version}`);
   }
 }
 if(unsound.length)console.log('glib exception rationale and exact chain: docs/DEPENDENCY-SECURITY.md. No general advisory suppression.');
