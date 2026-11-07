@@ -4,7 +4,12 @@ if(r.vulnerabilities?.count)throw Error(`${r.vulnerabilities.count} Rust vulnera
 const unsound=r.warnings?.unsound??[];
 for(const w of unsound)if(w.advisory.id!=='RUSTSEC-2024-0429'||w.package.name!=='glib'||w.package.version!=='0.18.5')throw Error(`Unreviewed soundness warning: ${w.advisory.id}`);
 console.log('Rust vulnerability count: 0');
-for(const [kind,items]of Object.entries(r.warnings??{}))for(const w of items)console.log(`${kind}: ${w.advisory.id} ${w.package.name} ${w.package.version}`);
+for (const [kind, items] of Object.entries(r.warnings ?? {})) {
+  for (const warning of items) {
+    const advisory = warning.advisory?.id ?? 'no advisory ID';
+    console.log(`\${kind}: \${advisory} \${warning.package.name} \${warning.package.version}`);
+  }
+}
 if(unsound.length)console.log('glib exception rationale and exact chain: docs/DEPENDENCY-SECURITY.md. No general advisory suppression.');
 
 for(const folder of ['src-tauri/src','src']){
