@@ -6,7 +6,7 @@
 
 ### Not Your Regular Companion
 
-**A little presence. A serious assistant. Built for your desktop today — and real hardware tomorrow.**
+**A local desktop companion with deterministic tools, durable scheduling and a host-authorized body protocol.**
 
 NYRC is a local-first intelligent personal companion designed to stay useful, expressive and personal without depending on the cloud.
 
@@ -41,31 +41,21 @@ The host owns memory, personality, intelligence, tasks, scheduling and permissio
 
 ```mermaid
 flowchart TD
-    Core[NYRC host: personality, memory, intelligence and tasks]
-    Core --> Authority[Host permissions and reaction engine]
-    Authority --> API[Semantic Body API]
-    API <--> Desktop[Desktop body — implemented]
-    API <--> Virtual[Virtual body — implemented]
-    API <--> Transport[Authenticated loopback transport — implemented]
-    Transport <--> Fixture[Device client fixture — tested]
-    API -. future adapter .-> ESP[ESP32 physical body]
-    API -. future adapter .-> Pi[Raspberry Pi or another form factor]
+    Request[Assistant request] --> Router[Deterministic router and saved routines]
+    Router --> Tasks[TaskManager: validated action snapshot]
+    Router --> Provider[Optional provider proposal]
+    Provider --> Tasks
+    Tasks --> Permission[Host capability and permission checks]
+    Permission --> Native[Tauri native services]
+    Native --> Store[(SQLite and OS credential store)]
+    Native --> Reaction[Semantic outcome and companion reaction]
+    Reaction --> Body[Body API]
+    Body --> Desktop[Desktop renderer]
+    Body --> Virtual[Virtual body]
+    Body --> Loopback[Authenticated loopback device fixture]
 ```
 
-### A small device, backed by a capable host
-
-An ESP32-class body does not need to run the entire AI stack. The intended design keeps demanding work on the host while the device draws its face, plays cached animations and reports interactions.
-
-| Host responsibility | Physical body concept |
-|---|---|
-| Memory, reminders, Pocket and integrations | Display, expressive eyes and local animations |
-| Optional local or cloud AI | Touch, buttons and IMU gestures |
-| Personality and semantic reactions | LEDs, brightness and haptic feedback |
-| Task execution and permission decisions | Battery status and device power management |
-
-For example, a completed timer becomes an attentive reaction. The desktop can animate its face; a future OLED body could show compact eyes and a status light. The core sends meaning, and each body renders what its capabilities support.
-
-Device disconnection leaves the host companion and local tools running. Devices report capabilities; they cannot approve permissions, execute arbitrary host actions or access the host database.
+The host owns memory, scheduling and permissions; bodies render semantic state and report interaction hints. Disconnecting a device leaves local tools running. A body cannot approve permissions, execute arbitrary host actions or read the host database. Physical ESP32/Raspberry Pi devices require additional firmware and protected adapters beyond this release candidate.
 
 ### What you can develop today
 
@@ -76,7 +66,8 @@ Open **Settings → Advanced → Platform & body diagnostics** to use the virtua
 Start the loopback transport, then run the fixture from the repository:
 
 ```sh
-node tools/body-client.mjs <port>
+# Replace 12345 with the port shown in pairing diagnostics.
+node tools/body-client.mjs 12345
 ```
 
 Enter the displayed session token when prompted. No physical device or firmware toolchain is needed to exercise the contract.
@@ -112,6 +103,16 @@ open youtube
 Simple requests resolve through local routing and saved aliases/modes before AI is considered. AI can propose a validated supported action; task execution still follows host permission policy. Timers are session-only. Reminders, Pocket, aliases, modes, memories and settings persist locally.
 
 See [assistant and integration setup](docs/V1-ASSISTANT.md) and the [platform capability matrix](docs/PLATFORMS.md). Live cloud/Google acceptance requires real credentials and account consent.
+
+## Execution and persistence
+
+The Svelte interface and TypeScript companion simulation call native Rust services through Tauri. Local routing handles supported commands before optional inference. TaskManager captures immutable action snapshots, expires permissions, supports cancellation and bounds task history. Provider configuration generations invalidate stale responses, so a reply from a previous configuration cannot silently become a current action.
+
+SQLite persists reminders, Pocket metadata, settings, aliases, modes and memory. The scheduler claims due reminders transactionally and recovers triggered records after restart; this protects application state without promising exactly-once operating-system notification delivery. Native instance locking prevents a second scheduler from opening the same home. Timers remain session-only.
+
+Pocket files live inside a checked path boundary with traversal, symlink and size checks. Credentials use the operating system's secure store. Storage initialization and migration complete before service-dependent views mount; failures remain explicit. See [architecture](docs/ARCHITECTURE.md) and [storage/migration](docs/STORAGE-MIGRATION.md) for the startup and recovery contracts.
+
+The Body transport authenticates loopback clients and bounds frames, event rates and retained IDs. ACKs, heartbeats and deduplication support reconnect; expression/text state can resynchronize without model generation. Transient sounds and haptics are not replayed. Device capability negotiation filters presentation commands and never expands host authority.
 
 ## Personality stays with NYRC
 
@@ -159,7 +160,6 @@ Use Node **22.12+**, Rust **1.89+** and your platform's [Tauri prerequisites](ht
 ```sh
 git clone https://github.com/akilanpl/NotYourRegularCompanian-NYRC-.git
 cd NotYourRegularCompanian-NYRC-
-git checkout v1-completion
 npm ci
 npm run tauri:dev
 ```
@@ -170,7 +170,7 @@ Build a packaged candidate:
 npm run tauri:build -- --ci -- --locked
 ```
 
-The RC currently lives on `v1-completion`; use the published release ref when one is available. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and fixtures.
+The inspected `main` source contains the release candidate; the linked build receipt identifies the historical `v1-completion` candidate. Use an exact release ref when reproducing those artifacts. Read [CONTRIBUTING.md](CONTRIBUTING.md) for development checks and fixtures.
 
 ## Release status
 
@@ -178,7 +178,9 @@ The RC passed **452 frontend tests**, **five release-tooling tests** and **143 R
 
 Dependency audits reported zero vulnerabilities, with a narrowly reviewed Linux glib soundness advisory and maintenance notices retained. Native validation covered ARM64 onboarding, reminders/Pocket across restart, upgrade, reinstall and backup/reset/restore.
 
-External acceptance remains for trusted Apple/Windows signing, live cloud/Google accounts, physical ESP32 hardware, Intel/Windows/Linux desktop environments, actual OS sleep/wake and mixed-DPI monitor hardware. The release workflow also needs default-branch registration and protected publication configuration after approved merge. A stable `v1.0.0` release has not been published.
+External acceptance remains for trusted Apple/Windows signing, live cloud/Google accounts, physical ESP32 hardware, Intel/Windows/Linux desktop environments, actual OS sleep/wake and mixed-DPI monitor hardware. Protected publication and platform acceptance must be checked against the intended release configuration; the historical scorecard is not a current deployment receipt. A stable `v1.0.0` release has not been published.
+
+A fresh documentation verification on 2026-11-07 reproduced 452 frontend tests, 143 Rust library tests, zero Svelte errors/warnings and a successful Rust check. The same checkout's npm audit now reports six development-tooling advisories (three low, two moderate, one high); the earlier zero-vulnerability receipt is historical. No dependencies were changed and no native UI smoke test was repeated.
 
 The [release scorecard](docs/PROMPT5-RELEASE.md) records evidence and practical limits. Short resource samples are not long-term battery-life or leak-free guarantees.
 
@@ -204,3 +206,5 @@ Same personality. Shared host memory and tools. A new way to be present.
 **Built local first. Designed to become physical.**
 
 </div>
+
+Documentation basis: [`94d2bc0`](https://github.com/akilanpl/NotYourRegularCompanian-NYRC-/tree/94d2bc0588500d2850e85e81d3f46a31c47612d3). Recorded validation retains its original source and environment scope.
